@@ -1,0 +1,30 @@
+torch:
+  device: cuda
+  seed: 42
+  num_workers: 4
+
+models:
+  mask_rcnn_hold:
+    pipeline: mask_rcnn
+    dataset: "datasets/Climbing Hold Detection"
+    num_classes: 3
+    train:
+      batch_size: 2
+      lr: 0.005
+      epochs: 25
+      lr_step_size: 15
+      lr_gamma: 0.1
+    validate:
+      batch_size: 1
+  mask_rcnn_holdtype:
+    pipeline: mask_rcnn
+    dataset: "datasets/Hold type segmentation"
+    num_classes: 7
+    train:
+      batch_size: 2
+      lr: 0.005
+      epochs: 30
+      lr_step_size: 20
+      lr_gamma: 0.1
+    validate:
+      batch_size: 1

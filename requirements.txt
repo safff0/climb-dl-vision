@@ -1,0 +1,7 @@
+torch
+torchvision
+click
+pyyaml
+pillow
+pycocotools
+numpy
