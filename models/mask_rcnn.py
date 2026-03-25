@@ -16,17 +16,16 @@ def _build_mask_rcnn(model_name: str):
     anchor_ratios = mcfg.get("anchor_ratios", [[0.5, 1.0, 2.0]])
     detections_per_img = mcfg.get("box_detections_per_img", 100)
 
-    anchor_generator = AnchorGenerator(
-        sizes=tuple(tuple(s) for s in anchor_sizes),
-        aspect_ratios=tuple(tuple(r) for r in anchor_ratios) * len(anchor_sizes),
-    )
-
     model = maskrcnn_resnet50_fpn_v2(
         weights=MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT,
         min_size=min_size,
         max_size=max_size,
-        rpn_anchor_generator=anchor_generator,
         box_detections_per_img=detections_per_img,
+    )
+
+    model.rpn.anchor_generator = AnchorGenerator(
+        sizes=tuple(tuple(s) for s in anchor_sizes),
+        aspect_ratios=tuple(tuple(r) for r in anchor_ratios) * len(anchor_sizes),
     )
 
     in_features = model.roi_heads.box_predictor.cls_score.in_features
