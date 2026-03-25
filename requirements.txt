@@ -6,3 +6,4 @@ pillow
 pycocotools
 numpy
 matplotlib
+tqdm

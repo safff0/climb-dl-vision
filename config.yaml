@@ -8,11 +8,20 @@ models:
     pipeline: mask_rcnn
     dataset: "datasets/Climbing Hold Detection"
     num_classes: 3
+    min_size: 1024
+    max_size: 1333
+    box_detections_per_img: 300
+    anchor_sizes: [[16, 32, 64, 128, 256]]
+    anchor_ratios: [[0.5, 1.0, 2.0]]
+    tile_inference: true
+    tile_size: 1024
+    tile_overlap: 128
     train:
       batch_size: 2
       lr: 0.005
       epochs: 25
-      lr_step_size: 15
+      scheduler: cosine
+      lr_milestones: [16, 22]
       lr_gamma: 0.1
     validate:
       batch_size: 1
@@ -20,11 +29,20 @@ models:
     pipeline: mask_rcnn
     dataset: "datasets/Hold type segmentation"
     num_classes: 7
+    min_size: 1024
+    max_size: 1333
+    box_detections_per_img: 300
+    anchor_sizes: [[16, 32, 64, 128, 256]]
+    anchor_ratios: [[0.5, 1.0, 2.0]]
+    tile_inference: false
+    tile_size: 1024
+    tile_overlap: 128
     train:
       batch_size: 2
       lr: 0.005
       epochs: 30
-      lr_step_size: 20
+      scheduler: cosine
+      lr_milestones: [20, 26]
       lr_gamma: 0.1
     validate:
       batch_size: 1

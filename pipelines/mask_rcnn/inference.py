@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import torch
 from PIL import Image
 from torchvision import transforms as T
+from torchvision.ops import nms
 from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks
 
 from common.config import cfg
@@ -19,6 +20,63 @@ def _load_category_names(dataset_root: str) -> dict[int, str]:
     with open(ann_path) as f:
         data = json.load(f)
     return {cat["id"]: cat["name"] for cat in data["categories"]}
+
+
+def _tiled_predict(model, img_tensor, tile_size, tile_overlap, device):
+    _, h, w = img_tensor.shape
+    stride = tile_size - tile_overlap
+
+    all_boxes = []
+    all_scores = []
+    all_labels = []
+    all_masks = []
+
+    for y in range(0, h, stride):
+        for x in range(0, w, stride):
+            x2 = min(x + tile_size, w)
+            y2 = min(y + tile_size, h)
+            x1 = max(0, x2 - tile_size)
+            y1 = max(0, y2 - tile_size)
+
+            tile = img_tensor[:, y1:y2, x1:x2].to(device)
+            pred = model([tile])[0]
+
+            if len(pred["boxes"]) == 0:
+                continue
+
+            boxes = pred["boxes"].cpu()
+            boxes[:, [0, 2]] += x1
+            boxes[:, [1, 3]] += y1
+
+            all_boxes.append(boxes)
+            all_scores.append(pred["scores"].cpu())
+            all_labels.append(pred["labels"].cpu())
+
+            masks_full = torch.zeros(len(boxes), 1, h, w)
+            tile_masks = pred["masks"].cpu()
+            masks_full[:, :, y1:y2, x1:x2] = tile_masks
+            all_masks.append(masks_full)
+
+    if not all_boxes:
+        return {
+            "boxes": torch.zeros((0, 4)),
+            "scores": torch.zeros(0),
+            "labels": torch.zeros(0, dtype=torch.int64),
+            "masks": torch.zeros((0, 1, h, w)),
+        }
+
+    boxes = torch.cat(all_boxes)
+    scores = torch.cat(all_scores)
+    labels = torch.cat(all_labels)
+    masks = torch.cat(all_masks)
+
+    keep = nms(boxes, scores, iou_threshold=0.5)
+    return {
+        "boxes": boxes[keep],
+        "scores": scores[keep],
+        "labels": labels[keep],
+        "masks": masks[keep],
+    }
 
 
 def _visualize(img_tensor, boxes, masks, labels, category_names):
@@ -42,7 +100,12 @@ def run_inference(model_name: str, weights: str, output: str, preview: bool = Fa
     model.load_state_dict(torch.load(weights, map_location=device, weights_only=True))
     model.eval()
 
-    dataset_root = cfg.models.get(model_name, {}).get("dataset", "")
+    mcfg = cfg.models.get(model_name, {})
+    dataset_root = mcfg.get("dataset", "")
+    use_tiles = mcfg.get("tile_inference", False)
+    tile_size = mcfg.get("tile_size", 1024)
+    tile_overlap = mcfg.get("tile_overlap", 128)
+
     category_names = _load_category_names(dataset_root)
     test_dir = Path(dataset_root) / "test"
     out_dir = Path(output)
@@ -56,8 +119,13 @@ def run_inference(model_name: str, weights: str, output: str, preview: bool = Fa
     with torch.no_grad():
         for idx, img_path in enumerate(image_paths):
             img = Image.open(img_path).convert("RGB")
-            img_tensor = to_tensor(img).to(device)
-            prediction = model([img_tensor])[0]
+            img_tensor = to_tensor(img)
+
+            if use_tiles:
+                prediction = _tiled_predict(model, img_tensor, tile_size, tile_overlap, device)
+            else:
+                prediction = model([img_tensor.to(device)])[0]
+                prediction = {k: v.cpu() for k, v in prediction.items()}
 
             keep = prediction["scores"] > SCORE_THRESHOLD
             boxes = prediction["boxes"][keep]

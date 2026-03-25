@@ -1,4 +1,5 @@
-from torchvision.models.detection import maskrcnn_resnet50_fpn, MaskRCNN_ResNet50_FPN_Weights
+from torchvision.models.detection import maskrcnn_resnet50_fpn_v2, MaskRCNN_ResNet50_FPN_V2_Weights
+from torchvision.models.detection.anchor_utils import AnchorGenerator
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 
@@ -6,8 +7,27 @@ from common.config import cfg
 from models import register
 
 
-def _build_mask_rcnn(num_classes: int):
-    model = maskrcnn_resnet50_fpn(weights=MaskRCNN_ResNet50_FPN_Weights.DEFAULT)
+def _build_mask_rcnn(model_name: str):
+    mcfg = cfg.models.get(model_name, {})
+    num_classes = mcfg.get("num_classes", 3)
+    min_size = mcfg.get("min_size", 800)
+    max_size = mcfg.get("max_size", 1333)
+    anchor_sizes = mcfg.get("anchor_sizes", [[32, 64, 128, 256, 512]])
+    anchor_ratios = mcfg.get("anchor_ratios", [[0.5, 1.0, 2.0]])
+    detections_per_img = mcfg.get("box_detections_per_img", 100)
+
+    anchor_generator = AnchorGenerator(
+        sizes=tuple(tuple(s) for s in anchor_sizes),
+        aspect_ratios=tuple(tuple(r) for r in anchor_ratios) * len(anchor_sizes),
+    )
+
+    model = maskrcnn_resnet50_fpn_v2(
+        weights=MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT,
+        min_size=min_size,
+        max_size=max_size,
+        rpn_anchor_generator=anchor_generator,
+        box_detections_per_img=detections_per_img,
+    )
 
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
@@ -21,12 +41,10 @@ def _build_mask_rcnn(num_classes: int):
 @register("mask_rcnn_hold")
 class MaskRCNNHold:
     def __new__(cls, **kwargs):
-        num_classes = cfg.models.get("mask_rcnn_hold", {}).get("num_classes", 3)
-        return _build_mask_rcnn(num_classes)
+        return _build_mask_rcnn("mask_rcnn_hold")
 
 
 @register("mask_rcnn_holdtype")
 class MaskRCNNHoldType:
     def __new__(cls, **kwargs):
-        num_classes = cfg.models.get("mask_rcnn_holdtype", {}).get("num_classes", 7)
-        return _build_mask_rcnn(num_classes)
+        return _build_mask_rcnn("mask_rcnn_holdtype")
