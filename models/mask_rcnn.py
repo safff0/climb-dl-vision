@@ -15,12 +15,14 @@ def _build_mask_rcnn(model_name: str):
     anchor_sizes = mcfg.get("anchor_sizes", [[32, 64, 128, 256, 512]])
     anchor_ratios = mcfg.get("anchor_ratios", [[0.5, 1.0, 2.0]])
     detections_per_img = mcfg.get("box_detections_per_img", 100)
+    trainable_layers = mcfg.get("trainable_backbone_layers", 3)
 
     model = maskrcnn_resnet50_fpn_v2(
         weights=MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT,
         min_size=min_size,
         max_size=max_size,
         box_detections_per_img=detections_per_img,
+        trainable_backbone_layers=trainable_layers,
     )
 
     flat_sizes = anchor_sizes[0] 

@@ -16,6 +16,7 @@ models:
     pipeline: mask_rcnn
     dataset: "datasets/detection"
     num_classes: 3
+    trainable_backbone_layers: 3
     min_size: 1024
     max_size: 1333
     box_detections_per_img: 300
@@ -37,6 +38,7 @@ models:
     pipeline: mask_rcnn
     dataset: "datasets/hold_type_segmentation"
     num_classes: 7
+    trainable_backbone_layers: 3
     min_size: 1024
     max_size: 1333
     box_detections_per_img: 300
