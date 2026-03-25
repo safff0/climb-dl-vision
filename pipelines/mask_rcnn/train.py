@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import torch
@@ -9,7 +10,9 @@ from common.config import cfg
 from data.coco_dataset import get_coco_dataloader
 from models import create_model
 from pipelines import register_pipeline
-from pipelines.mask_rcnn.validate import evaluate_coco
+from pipelines.mask_rcnn.validate import compute_val_loss, evaluate_coco
+
+logger = logging.getLogger(__name__)
 
 
 @register_pipeline("mask_rcnn", "train")
@@ -59,23 +62,29 @@ def run_train(model_name: str, output: str):
             pbar.set_postfix(loss=f"{losses.item():.4f}")
 
         scheduler.step()
-        avg_loss = total_loss / max(len(loader), 1)
+        avg_train_loss = total_loss / max(len(loader), 1)
 
+        val_loss = compute_val_loss(model, model_name, device)
         metrics = evaluate_coco(model, model_name, device)
         segm_ap = metrics["segm_ap"]
+        current_lr = optimizer.param_groups[0]["lr"]
 
         if segm_ap > best_ap:
             best_ap = segm_ap
             torch.save(model.state_dict(), str(out_path))
 
-        print(
-            f"Epoch {epoch + 1}/{epochs} — "
-            f"loss: {avg_loss:.4f} — "
-            f"segm_AP: {segm_ap:.4f} — "
-            f"best_AP: {best_ap:.4f}"
+        logger.info(
+            "Epoch %d/%d\n"
+            "  train_loss: %.4f  val_loss: %.4f\n"
+            "  bbox_AP: %.4f  segm_AP: %.4f  best_segm_AP: %.4f\n"
+            "  lr: %.6f",
+            epoch + 1, epochs,
+            avg_train_loss, val_loss,
+            metrics["bbox_ap"], segm_ap, best_ap,
+            current_lr,
         )
 
     last_path = out_path.with_stem(out_path.stem + "_last")
     torch.save(model.state_dict(), str(last_path))
-    print(f"Best model: {out_path} (segm AP: {best_ap:.4f})")
-    print(f"Last model: {last_path}")
+    logger.info("Best model: %s (segm AP: %.4f)", out_path, best_ap)
+    logger.info("Last model: %s", last_path)

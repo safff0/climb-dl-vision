@@ -16,6 +16,7 @@ class TorchConfig:
 class Config:
     torch: TorchConfig = field(default_factory=TorchConfig)
     models: Dict[str, Any] = field(default_factory=dict)
+    datasets: Dict[str, Any] = field(default_factory=dict)
 
     def model_cfg(self, model_name: str, mode: str) -> Dict[str, Any]:
         return self.models.get(model_name, {}).get(mode, {})
@@ -24,7 +25,11 @@ class Config:
 def _load_config(path: Path) -> Config:
     raw = yaml.safe_load(path.read_text()) or {}
     torch_cfg = TorchConfig(**raw.get("torch", {}))
-    return Config(torch=torch_cfg, models=raw.get("models", {}))
+    return Config(
+        torch=torch_cfg,
+        models=raw.get("models", {}),
+        datasets=raw.get("datasets", {}),
+    )
 
 
 _DEFAULT_PATH = "config.yaml"

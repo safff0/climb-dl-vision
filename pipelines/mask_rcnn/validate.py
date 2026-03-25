@@ -1,4 +1,5 @@
 import json
+import logging
 import tempfile
 
 import numpy as np
@@ -11,6 +12,21 @@ from common.config import cfg
 from data.coco_dataset import get_coco_dataloader
 from models import create_model
 from pipelines import register_pipeline
+
+logger = logging.getLogger(__name__)
+
+
+def compute_val_loss(model, model_name: str, device: torch.device) -> float:
+    loader = get_coco_dataloader(model_name, "valid")
+    model.train()
+    total_loss = 0.0
+    with torch.no_grad():
+        for images, targets in loader:
+            images = [img.to(device) for img in images]
+            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+            loss_dict = model(images, targets)
+            total_loss += sum(loss_dict.values()).item()
+    return total_loss / max(len(loader), 1)
 
 
 def evaluate_coco(model, model_name: str, device: torch.device) -> dict:
@@ -85,5 +101,5 @@ def run_validate(model_name: str, weights: str):
     model.load_state_dict(torch.load(weights, map_location=device, weights_only=True))
 
     metrics = evaluate_coco(model, model_name, device)
-    print(f"bbox AP: {metrics['bbox_ap']:.4f}")
-    print(f"segm AP: {metrics['segm_ap']:.4f}")
+    logger.info("bbox AP: %.4f", metrics["bbox_ap"])
+    logger.info("segm AP: %.4f", metrics["segm_ap"])

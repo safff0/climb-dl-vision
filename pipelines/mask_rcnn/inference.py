@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -12,6 +13,7 @@ from common.config import cfg
 from models import create_model
 from pipelines import register_pipeline
 
+logger = logging.getLogger(__name__)
 SCORE_THRESHOLD = 0.5
 
 
@@ -148,6 +150,6 @@ def run_inference(model_name: str, weights: str, output: str, preview: bool = Fa
                 preview_path = out_dir / "preview.png"
                 plt.savefig(preview_path, dpi=150)
                 plt.close()
-                print(f"Preview saved to {preview_path}")
+                logger.info("Preview saved to %s", preview_path)
 
-    print(f"Saved {len(image_paths)} results to {out_dir}")
+    logger.info("Saved %d results to %s", len(image_paths), out_dir)

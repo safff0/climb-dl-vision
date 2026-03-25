@@ -3,6 +3,14 @@ torch:
   seed: 42
   num_workers: 2
 
+datasets:
+  detection:
+    dir: "datasets/detection"
+    val_split: 0.15
+  hold_type_segmentation:
+    dir: "datasets/hold_type_segmentation"
+    val_split: 0.15
+
 models:
   mask_rcnn_hold:
     pipeline: mask_rcnn
@@ -27,7 +35,7 @@ models:
       batch_size: 1
   mask_rcnn_holdtype:
     pipeline: mask_rcnn
-    dataset: "datasets/Hold type segmentation"
+    dataset: "datasets/hold_type_segmentation"
     num_classes: 7
     min_size: 1024
     max_size: 1333
