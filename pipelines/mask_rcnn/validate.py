@@ -12,11 +12,11 @@ from pipelines import register_pipeline
 
 
 @register_pipeline("mask_rcnn", "validate")
-def run_validate(model_name: str, output: str):
+def run_validate(model_name: str, weights: str):
     device = torch.device(cfg.torch.device)
 
     model = create_model(model_name).to(device)
-    model.load_state_dict(torch.load(output, map_location=device, weights_only=True))
+    model.load_state_dict(torch.load(weights, map_location=device, weights_only=True))
     model.eval()
 
     loader = get_coco_dataloader(model_name, "valid")

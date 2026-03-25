@@ -20,21 +20,22 @@ def train(model_name, output):
 
 @cli.command()
 @click.argument("model_name")
-@click.option("--output", "-o", required=True)
-def validate(model_name, output):
+@click.option("--weights", "-w", required=True)
+def validate(model_name, weights):
     pipeline_name = cfg.models[model_name]["pipeline"]
     run = get_pipeline(pipeline_name, "validate")
-    run(model_name, output)
+    run(model_name, weights)
 
 
 @cli.command()
 @click.argument("model_name")
 @click.option("--weights", "-w", required=True)
 @click.option("--output", "-o", default="results/")
-def inference(model_name, weights, output):
+@click.option("--preview", is_flag=True, default=False)
+def inference(model_name, weights, output, preview):
     pipeline_name = cfg.models[model_name]["pipeline"]
     run = get_pipeline(pipeline_name, "inference")
-    run(model_name, weights, output)
+    run(model_name, weights, output, preview=preview)
 
 
 if __name__ == "__main__":
