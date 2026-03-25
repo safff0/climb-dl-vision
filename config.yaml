@@ -1,12 +1,12 @@
 torch:
   device: cuda
   seed: 42
-  num_workers: 4
+  num_workers: 2
 
 models:
   mask_rcnn_hold:
     pipeline: mask_rcnn
-    dataset: "datasets/Climbing Hold Detection"
+    dataset: "datasets/detection"
     num_classes: 3
     min_size: 1024
     max_size: 1333
@@ -17,7 +17,7 @@ models:
     tile_size: 1024
     tile_overlap: 128
     train:
-      batch_size: 2
+      batch_size: 4
       lr: 0.005
       epochs: 25
       scheduler: cosine

@@ -23,9 +23,12 @@ def _build_mask_rcnn(model_name: str):
         box_detections_per_img=detections_per_img,
     )
 
+    flat_sizes = anchor_sizes[0] 
+    sizes_tuple = tuple((s,) for s in flat_sizes)
+    ratios_tuple = tuple(tuple(anchor_ratios[0]) for _ in range(len(flat_sizes)))
     model.rpn.anchor_generator = AnchorGenerator(
-        sizes=tuple(tuple(s) for s in anchor_sizes),
-        aspect_ratios=tuple(tuple(r) for r in anchor_ratios) * len(anchor_sizes),
+        sizes=sizes_tuple,
+        aspect_ratios=ratios_tuple
     )
 
     in_features = model.roi_heads.box_predictor.cls_score.in_features
