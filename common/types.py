@@ -58,3 +58,98 @@ class TrainConfig:
 @dataclass
 class ValidateConfig:
     batch_size: int = 1
+
+
+class SegClass(StrEnum):
+    HOLD = "hold"
+    VOLUME = "volume"
+
+
+@dataclass
+class Detection:
+    box: object = None
+    mask: object = None
+    seg_label: str = ""
+    score: float = 0.0
+    color: str | None = None
+    color_probs: dict[str, float] | None = None
+    color_cluster: int | None = None
+    color_clustered: str | None = None
+    hold_type: str | None = None
+    type_probs: dict[str, float] | None = None
+
+    def display_label(self) -> str:
+        parts = [self.seg_label]
+        color = self.color_clustered or self.color
+        if color:
+            parts.append(color)
+        if self.hold_type:
+            parts.append(self.hold_type)
+        return " | ".join(parts)
+
+    def to_dict(self) -> dict:
+        d = {
+            "bbox": self.box.cpu().tolist() if self.box is not None else None,
+            "seg_class": self.seg_label,
+            "score": round(self.score, 4),
+        }
+        if self.color is not None:
+            d["color"] = self.color_clustered or self.color
+            d["color_raw"] = self.color
+            d["color_probs"] = self.color_probs
+            if self.color_cluster is not None:
+                d["color_cluster"] = self.color_cluster
+        if self.hold_type is not None:
+            d["type"] = self.hold_type
+            d["type_probs"] = self.type_probs
+        return d
+
+
+@dataclass
+class ImagePredictions:
+    image: str = ""
+    detections: list[Detection] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "image": self.image,
+            "detections": [d.to_dict() for d in self.detections],
+        }
+
+
+@dataclass
+class CropRecord:
+    file: str = ""
+    label: int = 0
+    source_image: str = ""
+    pred_box: list[int] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "file": self.file,
+            "label": self.label,
+            "source_image": self.source_image,
+            "pred_box": self.pred_box,
+        }
+
+
+@dataclass
+class CropMeta:
+    class_names: list[str] = field(default_factory=list)
+    num_classes: int = 0
+    crops: list[CropRecord] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "class_names": self.class_names,
+            "num_classes": self.num_classes,
+            "crops": [c.to_dict() for c in self.crops],
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "CropMeta":
+        return cls(
+            class_names=d["class_names"],
+            num_classes=d["num_classes"],
+            crops=[CropRecord(**c) for c in d["crops"]],
+        )

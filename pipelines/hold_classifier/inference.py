@@ -5,6 +5,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms as T
 from torchvision.ops import nms
@@ -12,10 +13,11 @@ from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks
 from tqdm import tqdm
 
 from common.config import cfg
-from common.types import PipelineMode
+from common.types import Detection, ImagePredictions, PipelineMode, SegClass
 from data.crop_dataset import get_dataset_info
 from models import create_model
 from pipelines import register_pipeline
+from pipelines.hold_classifier.postprocess import cluster_colors
 
 logger = logging.getLogger(__name__)
 SCORE_THRESHOLD = 0.7
@@ -57,6 +59,15 @@ def _class_aware_nms(boxes, scores, labels, masks, iou_threshold=0.5):
 
     keep = torch.cat(keep_indices)
     return boxes[keep], scores[keep], labels[keep], masks[keep]
+
+
+def _classify_crop(classifier, img_tensor, box, crop_size, padding, class_names, device):
+    crop = _crop_and_prepare(img_tensor, box, crop_size, padding)
+    logits = classifier(crop.to(device))
+    probs = F.softmax(logits, dim=1).squeeze(0).cpu()
+    pred_idx = probs.argmax().item()
+    prob_dict = {name: round(probs[i].item(), 4) for i, name in enumerate(class_names)}
+    return class_names[pred_idx], prob_dict
 
 
 def run_full_inference(
@@ -101,7 +112,7 @@ def run_full_inference(
     seg_ann_path = Path(seg_dataset_root) / "train" / "_annotations.coco.json"
     with open(seg_ann_path) as f:
         seg_cats = {c["id"]: c["name"] for c in json.load(f)["categories"]}
-    hold_label_ids = {cid for cid, name in seg_cats.items() if name.lower() == "hold"}
+    hold_label_ids = {cid for cid, name in seg_cats.items() if name.lower() == SegClass.HOLD}
 
     test_dir = Path(image_dir)
     out_dir = Path(output)
@@ -111,6 +122,7 @@ def run_full_inference(
     image_paths = sorted(p for p in test_dir.iterdir() if p.suffix.lower() in extensions)
 
     to_tensor = T.ToTensor()
+    all_predictions = []
 
     with torch.no_grad():
         for idx, img_path in tqdm(enumerate(image_paths), total=len(image_paths), desc="Inference"):
@@ -128,48 +140,47 @@ def run_full_inference(
                 boxes, scores_t, labels, masks, iou_threshold=0.5,
             )
 
-            annotations = []
+            detections: list[Detection] = []
             for i in range(len(boxes)):
                 label_id = labels[i].item()
                 is_hold = label_id in hold_label_ids
 
-                ann = {
-                    "box": boxes[i],
-                    "mask": masks[i].squeeze(0),
-                    "seg_label": seg_cats.get(label_id, str(label_id)),
-                    "score": scores_t[i].item(),
-                    "color": None,
-                    "type": None,
-                }
+                det = Detection(
+                    box=boxes[i],
+                    mask=masks[i].squeeze(0),
+                    seg_label=seg_cats.get(label_id, str(label_id)),
+                    score=scores_t[i].item(),
+                )
 
                 if is_hold:
                     if color_classifier is not None:
-                        crop = _crop_and_prepare(img_tensor, boxes[i], color_crop_size, color_padding)
-                        pred = color_classifier(crop.to(device)).argmax(dim=1).item()
-                        ann["color"] = color_names[pred]
+                        det.color, det.color_probs = _classify_crop(
+                            color_classifier, img_tensor, boxes[i],
+                            color_crop_size, color_padding, color_names, device,
+                        )
 
                     if type_classifier is not None:
-                        crop = _crop_and_prepare(img_tensor, boxes[i], type_crop_size, type_padding)
-                        pred = type_classifier(crop.to(device)).argmax(dim=1).item()
-                        ann["type"] = type_names[pred]
+                        det.hold_type, det.type_probs = _classify_crop(
+                            type_classifier, img_tensor, boxes[i],
+                            type_crop_size, type_padding, type_names, device,
+                        )
 
-                annotations.append(ann)
+                detections.append(det)
+
+            if color_classifier is not None:
+                detections = cluster_colors(detections)
+
+            img_preds = ImagePredictions(image=img_path.name, detections=detections)
+            all_predictions.append(img_preds)
 
             img_uint8 = (img_tensor * 255).to(torch.uint8).cpu()
 
-            if annotations:
-                all_masks = torch.stack([a["mask"].cpu() for a in annotations])
+            if detections:
+                all_masks = torch.stack([d.mask.cpu() for d in detections])
                 img_uint8 = draw_segmentation_masks(img_uint8, all_masks, alpha=0.4)
 
-                box_tensor = torch.stack([a["box"].cpu() for a in annotations])
-                label_strs = []
-                for a in annotations:
-                    parts = [a["seg_label"]]
-                    if a["color"]:
-                        parts.append(a["color"])
-                    if a["type"]:
-                        parts.append(a["type"])
-                    label_strs.append(" | ".join(parts))
+                box_tensor = torch.stack([d.box.cpu() for d in detections])
+                label_strs = [d.display_label() for d in detections]
                 img_uint8 = draw_bounding_boxes(img_uint8, box_tensor, labels=label_strs, width=2)
 
             result_img = T.ToPILImage()(img_uint8)
@@ -181,7 +192,7 @@ def run_full_inference(
                 ax1.set_title("Original")
                 ax1.axis("off")
                 ax2.imshow(np.array(result_img))
-                ax2.set_title(f"Detections ({len(annotations)} objects)")
+                ax2.set_title(f"Detections ({len(detections)} objects)")
                 ax2.axis("off")
                 plt.tight_layout()
                 preview_path = out_dir / "preview.png"
@@ -189,7 +200,11 @@ def run_full_inference(
                 plt.close()
                 logger.info("Preview saved to %s", preview_path)
 
+    with open(out_dir / "predictions.json", "w") as f:
+        json.dump([p.to_dict() for p in all_predictions], f, indent=2)
+
     logger.info("Saved %d results to %s", len(image_paths), out_dir)
+    logger.info("Predictions JSON: %s", out_dir / "predictions.json")
 
 
 @register_pipeline("hold_classifier", PipelineMode.INFERENCE)

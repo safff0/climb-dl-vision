@@ -1,4 +1,5 @@
 import json
+import logging
 from collections import Counter
 from pathlib import Path
 
@@ -10,7 +11,9 @@ from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import transforms as T
 
 from common.config import cfg
-from common.types import AugmentMode, DatasetInfo, Split
+from common.types import AugmentMode, CropMeta, DatasetInfo, Split
+
+logger = logging.getLogger(__name__)
 
 
 def _get_type_augmentations(crop_size):
@@ -115,6 +118,43 @@ class CropDataset(Dataset):
         return [1.0 / counts[s[2]] for s in self.samples]
 
 
+class SegmentorCropDataset(Dataset):
+    def __init__(self, crops_dir: str, transforms=None):
+        self.root = Path(crops_dir)
+        with open(self.root / "labels.json") as f:
+            self.meta = CropMeta.from_dict(json.load(f))
+        self.class_names = self.meta.class_names
+        self.num_classes = self.meta.num_classes
+        self.transforms = transforms
+
+    def __len__(self):
+        return len(self.meta.crops)
+
+    def __getitem__(self, idx):
+        record = self.meta.crops[idx]
+        img = Image.open(self.root / record.file).convert("RGB")
+        label = record.label
+
+        if self.transforms:
+            img = self.transforms(img)
+        else:
+            img = T.ToTensor()(img)
+
+        return img, label
+
+    def get_class_weights(self) -> torch.Tensor:
+        counts = Counter(c.label for c in self.meta.crops)
+        total = len(self.meta.crops)
+        weights = torch.zeros(self.num_classes)
+        for cls_idx, count in counts.items():
+            weights[cls_idx] = total / (self.num_classes * count)
+        return weights
+
+    def get_sample_weights(self) -> list[float]:
+        counts = Counter(c.label for c in self.meta.crops)
+        return [1.0 / counts[c.label] for c in self.meta.crops]
+
+
 def get_crop_dataloader(model_name: str, split: Split) -> DataLoader:
     mcfg = cfg.model_cfg(model_name)
     dataset_root = mcfg["dataset"]
@@ -134,7 +174,12 @@ def get_crop_dataloader(model_name: str, split: Split) -> DataLoader:
     else:
         transforms = _get_val_transforms(crop_size)
 
-    dataset = CropDataset(dataset_root, split, crop_size, padding, use_mask, transforms)
+    segmentor_crops_dir = Path(dataset_root) / "segmentor_crops" / split
+    if (segmentor_crops_dir / "labels.json").exists():
+        logger.info("Using segmentor crops from %s", segmentor_crops_dir)
+        dataset = SegmentorCropDataset(str(segmentor_crops_dir), transforms)
+    else:
+        dataset = CropDataset(dataset_root, split, crop_size, padding, use_mask, transforms)
 
     sampler = None
     shuffle = False

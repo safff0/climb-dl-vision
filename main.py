@@ -63,6 +63,13 @@ def full_inference(segmentor_weights, color_weights, type_weights, image_dir, ou
     )
 
 
+@cli.command("prepare-crops")
+@click.argument("model_name")
+def prepare_crops(model_name):
+    from data.segmentor_crops import prepare_segmentor_crops
+    prepare_segmentor_crops(model_name)
+
+
 @cli.command("create-dataset")
 @click.argument("dataset_name")
 @click.option("--url", "-u", required=True)
