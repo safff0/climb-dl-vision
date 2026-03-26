@@ -16,9 +16,7 @@ from common.types import AugmentMode, DatasetInfo, Split
 def _get_type_augmentations(crop_size):
     return T.Compose([
         T.RandomHorizontalFlip(),
-        T.RandomVerticalFlip(),
-        T.RandomRotation(30),
-        T.ColorJitter(brightness=0.3, contrast=0.3),
+        T.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
         T.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0)),
         T.Resize((crop_size, crop_size)),
         T.ToTensor(),
@@ -28,7 +26,7 @@ def _get_type_augmentations(crop_size):
 def _get_color_augmentations(crop_size):
     return T.Compose([
         T.RandomHorizontalFlip(),
-        T.ColorJitter(brightness=0.15, contrast=0.15),
+        T.RandomVerticalFlip(),
         T.Resize((crop_size, crop_size)),
         T.ToTensor(),
     ])

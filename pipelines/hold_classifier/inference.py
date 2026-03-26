@@ -27,7 +27,7 @@ def _load_segmentor(segmentor_model: str, weights_path: str, device):
     return model
 
 
-def _crop_and_prepare(img_tensor, box, mask, crop_size, padding, use_mask):
+def _crop_and_prepare(img_tensor, box, crop_size, padding):
     _, h, w = img_tensor.shape
     x1, y1, x2, y2 = box.int().tolist()
     x1 = max(0, x1 - padding)
@@ -38,11 +38,6 @@ def _crop_and_prepare(img_tensor, box, mask, crop_size, padding, use_mask):
     crop = img_tensor[:, y1:y2, x1:x2]
     crop = T.Resize((crop_size, crop_size))(crop)
 
-    if use_mask:
-        mask_crop = mask[y1:y2, x1:x2].unsqueeze(0).float()
-        mask_crop = T.Resize((crop_size, crop_size))(mask_crop)
-        crop = torch.cat([crop, mask_crop], dim=0)
-
     return crop.unsqueeze(0)
 
 
@@ -52,7 +47,6 @@ def run_inference(model_name: str, weights: str, output: str, image_dir: str, pr
     mcfg = cfg.model_cfg(model_name)
     crop_size = mcfg["crop_size"]
     padding = mcfg["crop_padding"]
-    use_mask = mcfg["use_mask_channel"]
     segmentor_model = mcfg["segmentor_model"]
     segmentor_weights = mcfg["segmentor_weights"]
 
@@ -108,8 +102,7 @@ def run_inference(model_name: str, weights: str, output: str, image_dir: str, pr
 
                 if is_hold:
                     crop = _crop_and_prepare(
-                        img_tensor, boxes[i], masks[i].squeeze(0),
-                        crop_size, padding, use_mask,
+                        img_tensor, boxes[i], crop_size, padding,
                     )
                     cls_out = classifier(crop.to(device))
                     cls_pred = cls_out.argmax(dim=1).item()

@@ -91,6 +91,57 @@ class RandomHorizontalFlip:
         return image, target
 
 
+class ColorJitterDetection:
+    def __init__(self, brightness=0.3, contrast=0.3, saturation=0.2):
+        self.jitter = T.ColorJitter(brightness=brightness, contrast=contrast, saturation=saturation)
+
+    def __call__(self, image, target):
+        image = self.jitter(image)
+        return image, target
+
+
+class RandomCropDetection:
+    def __init__(self, min_scale=0.7):
+        self.min_scale = min_scale
+
+    def __call__(self, image, target):
+        _, h, w = image.shape
+        scale = torch.empty(1).uniform_(self.min_scale, 1.0).item()
+        new_h, new_w = int(h * scale), int(w * scale)
+        top = torch.randint(0, h - new_h + 1, (1,)).item()
+        left = torch.randint(0, w - new_w + 1, (1,)).item()
+
+        image = image[:, top:top + new_h, left:left + new_w]
+
+        boxes = target["boxes"].clone()
+        boxes[:, [0, 2]] -= left
+        boxes[:, [1, 3]] -= top
+        boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(0, new_w)
+        boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(0, new_h)
+
+        widths = boxes[:, 2] - boxes[:, 0]
+        heights = boxes[:, 3] - boxes[:, 1]
+        keep = (widths > 2) & (heights > 2)
+
+        target["boxes"] = boxes[keep]
+        target["labels"] = target["labels"][keep]
+        target["masks"] = target["masks"][keep][:, top:top + new_h, left:left + new_w]
+        target["area"] = target["area"][keep]
+        target["iscrowd"] = target["iscrowd"][keep]
+
+        return image, target
+
+
+class ComposeDetection:
+    def __init__(self, transforms):
+        self.transforms = transforms
+
+    def __call__(self, image, target):
+        for t in self.transforms:
+            image, target = t(image, target)
+        return image, target
+
+
 def collate_fn(batch):
     return tuple(zip(*batch))
 
@@ -102,7 +153,14 @@ def get_coco_dataloader(model_name: str, split: Split) -> DataLoader:
     train_cfg = cfg.train_cfg(model_name)
     batch_size = train_cfg.batch_size if split == Split.TRAIN else val_cfg.batch_size
 
-    transforms = RandomHorizontalFlip() if split == Split.TRAIN else None
+    if split == Split.TRAIN:
+        transforms = ComposeDetection([
+            RandomHorizontalFlip(),
+            RandomCropDetection(min_scale=0.7),
+            ColorJitterDetection(brightness=0.3, contrast=0.3, saturation=0.2),
+        ])
+    else:
+        transforms = None
     dataset = CocoDataset(dataset_root, split, transforms=transforms)
 
     return DataLoader(
