@@ -210,3 +210,4 @@ __marimo__/
 
 datasets/*
 results/*
+weights/*
