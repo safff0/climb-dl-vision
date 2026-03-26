@@ -20,8 +20,8 @@ models:
     dataset: "datasets/detection"
     num_classes: 3
     trainable_backbone_layers: 2
-    min_size: 1024
-    max_size: 1333
+    min_size: 1333
+    max_size: 1600
     box_detections_per_img: 300
     anchor_sizes: [[16, 32, 64, 128, 256]]
     anchor_ratios: [[0.5, 1.0, 2.0]]
@@ -42,7 +42,7 @@ models:
     pipeline: hold_classifier
     dataset: "datasets/hold_color"
     backbone: convnext_tiny
-    crop_size: 128
+    crop_size: 224
     crop_padding: 16
     use_mask_channel: false
     augment_mode: color
@@ -62,7 +62,7 @@ models:
     pipeline: hold_classifier
     dataset: "datasets/hold_type"
     backbone: convnext_tiny
-    crop_size: 128
+    crop_size: 224
     crop_padding: 16
     use_mask_channel: false
     augment_mode: type

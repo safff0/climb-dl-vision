@@ -44,6 +44,25 @@ def inference(model_name, weights, image_dir, output, preview):
     run(model_name, weights, output, image_dir=image_dir, preview=preview)
 
 
+@cli.command("full-inference")
+@click.option("--segmentor-weights", "-s", required=True)
+@click.option("--color-weights", "-c", default=None)
+@click.option("--type-weights", "-t", default=None)
+@click.option("--image-dir", "-d", required=True)
+@click.option("--output", "-o", default="results/")
+@click.option("--preview", is_flag=True, default=False)
+def full_inference(segmentor_weights, color_weights, type_weights, image_dir, output, preview):
+    from pipelines.hold_classifier.inference import run_full_inference
+    run_full_inference(
+        segmentor_weights=segmentor_weights,
+        image_dir=image_dir,
+        output=output,
+        color_weights=color_weights,
+        type_weights=type_weights,
+        preview=preview,
+    )
+
+
 @cli.command("create-dataset")
 @click.argument("dataset_name")
 @click.option("--url", "-u", required=True)
