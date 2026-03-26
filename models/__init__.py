@@ -15,5 +15,6 @@ def create_model(name: str, **kwargs) -> nn.Module:
 
 
 import models.classifier
+import models.hold_classifier
 import models.mask_rcnn
 import models.segmenter

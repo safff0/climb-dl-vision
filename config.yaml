@@ -1,5 +1,5 @@
 torch:
-  device: cuda
+  device: mps
   seed: 42
   num_workers: 2
 
@@ -7,8 +7,11 @@ datasets:
   detection:
     dir: "datasets/detection"
     val_split: 0.15
-  hold_type_segmentation:
-    dir: "datasets/hold_type_segmentation"
+  hold_color:
+    dir: "datasets/hold_color"
+    val_split: 0.15
+  hold_type:
+    dir: "datasets/hold_type"
     val_split: 0.15
 
 models:
@@ -34,25 +37,43 @@ models:
       lr_gamma: 0.1
     validate:
       batch_size: 1
-  mask_rcnn_holdtype:
-    pipeline: mask_rcnn
-    dataset: "datasets/hold_type_segmentation"
-    num_classes: 7
-    trainable_backbone_layers: 3
-    min_size: 1024
-    max_size: 1333
-    box_detections_per_img: 300
-    anchor_sizes: [[16, 32, 64, 128, 256]]
-    anchor_ratios: [[0.5, 1.0, 2.0]]
-    tile_inference: false
-    tile_size: 1024
-    tile_overlap: 128
+
+  hold_color_classifier:
+    pipeline: hold_classifier
+    dataset: "datasets/hold_color"
+    backbone: convnext_tiny
+    crop_size: 128
+    crop_padding: 16
+    use_mask_channel: true
+    augment_mode: color
+    segmentor_model: mask_rcnn_hold
+    segmentor_weights: "weights/hold.pt"
     train:
-      batch_size: 2
-      lr: 0.005
+      batch_size: 64
+      lr: 0.001
       epochs: 30
       scheduler: cosine
-      lr_milestones: [20, 26]
-      lr_gamma: 0.1
+      freeze_backbone_epochs: 5
+      freeze_backbone_lr: 0.01
     validate:
-      batch_size: 1
+      batch_size: 128
+
+  hold_type_classifier:
+    pipeline: hold_classifier
+    dataset: "datasets/hold_type"
+    backbone: convnext_tiny
+    crop_size: 128
+    crop_padding: 16
+    use_mask_channel: true
+    augment_mode: type
+    segmentor_model: mask_rcnn_hold
+    segmentor_weights: "weights/hold.pt"
+    train:
+      batch_size: 64
+      lr: 0.0001
+      epochs: 30
+      scheduler: cosine
+      freeze_backbone_epochs: 10
+      freeze_backbone_lr: 0.005
+    validate:
+      batch_size: 128

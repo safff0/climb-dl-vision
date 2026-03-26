@@ -2,6 +2,7 @@ import click
 
 from common.config import cfg
 from common.logging import setup_logging
+from common.types import PipelineMode
 from data.prepare import create_dataset
 from pipelines import get_pipeline
 
@@ -17,8 +18,8 @@ def cli():
 @click.argument("model_name")
 @click.option("--output", "-o", required=True)
 def train(model_name, output):
-    pipeline_name = cfg.models[model_name]["pipeline"]
-    run = get_pipeline(pipeline_name, "train")
+    pipeline_name = cfg.model_cfg(model_name)["pipeline"]
+    run = get_pipeline(pipeline_name, PipelineMode.TRAIN)
     run(model_name, output)
 
 
@@ -26,8 +27,8 @@ def train(model_name, output):
 @click.argument("model_name")
 @click.option("--weights", "-w", required=True)
 def validate(model_name, weights):
-    pipeline_name = cfg.models[model_name]["pipeline"]
-    run = get_pipeline(pipeline_name, "validate")
+    pipeline_name = cfg.model_cfg(model_name)["pipeline"]
+    run = get_pipeline(pipeline_name, PipelineMode.VALIDATE)
     run(model_name, weights)
 
 
@@ -37,8 +38,8 @@ def validate(model_name, weights):
 @click.option("--output", "-o", default="results/")
 @click.option("--preview", is_flag=True, default=False)
 def inference(model_name, weights, output, preview):
-    pipeline_name = cfg.models[model_name]["pipeline"]
-    run = get_pipeline(pipeline_name, "inference")
+    pipeline_name = cfg.model_cfg(model_name)["pipeline"]
+    run = get_pipeline(pipeline_name, PipelineMode.INFERENCE)
     run(model_name, weights, output, preview=preview)
 
 

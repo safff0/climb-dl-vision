@@ -8,10 +8,11 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms as T
 
 from common.config import cfg
+from common.types import Split
 
 
 class CocoDataset(Dataset):
-    def __init__(self, root: str, split: str, transforms=None):
+    def __init__(self, root: str, split: Split, transforms=None):
         self.root = Path(root) / split
         self.coco = COCO(str(self.root / "_annotations.coco.json"))
         self.ids = list(self.coco.imgs.keys())
@@ -94,20 +95,20 @@ def collate_fn(batch):
     return tuple(zip(*batch))
 
 
-def get_coco_dataloader(model_name: str, split: str) -> DataLoader:
-    model_cfg = cfg.models.get(model_name, {})
-    dataset_root = model_cfg.get("dataset", "")
-    mode = "train" if split == "train" else "validate"
-    mode_cfg = cfg.model_cfg(model_name, mode)
-    batch_size = mode_cfg.get("batch_size", 1)
+def get_coco_dataloader(model_name: str, split: Split) -> DataLoader:
+    mcfg = cfg.model_cfg(model_name)
+    dataset_root = mcfg["dataset"]
+    val_cfg = cfg.validate_cfg(model_name)
+    train_cfg = cfg.train_cfg(model_name)
+    batch_size = train_cfg.batch_size if split == Split.TRAIN else val_cfg.batch_size
 
-    transforms = RandomHorizontalFlip() if split == "train" else None
+    transforms = RandomHorizontalFlip() if split == Split.TRAIN else None
     dataset = CocoDataset(dataset_root, split, transforms=transforms)
 
     return DataLoader(
         dataset,
         batch_size=batch_size,
-        shuffle=(split == "train"),
+        shuffle=(split == Split.TRAIN),
         num_workers=cfg.torch.num_workers,
         collate_fn=collate_fn,
     )

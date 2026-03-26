@@ -8,8 +8,8 @@ from models import register
 
 
 def _build_mask_rcnn(model_name: str):
-    mcfg = cfg.models.get(model_name, {})
-    num_classes = mcfg.get("num_classes", 3)
+    mcfg = cfg.model_cfg(model_name)
+    num_classes = mcfg["num_classes"]
     min_size = mcfg.get("min_size", 800)
     max_size = mcfg.get("max_size", 1333)
     anchor_sizes = mcfg.get("anchor_sizes", [[32, 64, 128, 256, 512]])
@@ -25,7 +25,7 @@ def _build_mask_rcnn(model_name: str):
         trainable_backbone_layers=trainable_layers,
     )
 
-    flat_sizes = anchor_sizes[0] 
+    flat_sizes = anchor_sizes[0]
     sizes_tuple = tuple((s,) for s in flat_sizes)
     ratios_tuple = tuple(tuple(anchor_ratios[0]) for _ in range(len(flat_sizes)))
     model.rpn.anchor_generator = AnchorGenerator(

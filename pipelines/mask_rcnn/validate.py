@@ -9,6 +9,7 @@ from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
 from common.config import cfg
+from common.types import EvalMetrics, PipelineMode, Split
 from data.coco_dataset import get_coco_dataloader
 from models import create_model
 from pipelines import register_pipeline
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def compute_val_loss(model, model_name: str, device: torch.device) -> float:
-    loader = get_coco_dataloader(model_name, "valid")
+    loader = get_coco_dataloader(model_name, Split.VALID)
     model.train()
     total_loss = 0.0
     with torch.no_grad():
@@ -29,11 +30,11 @@ def compute_val_loss(model, model_name: str, device: torch.device) -> float:
     return total_loss / max(len(loader), 1)
 
 
-def evaluate_coco(model, model_name: str, device: torch.device) -> dict:
+def evaluate_coco(model, model_name: str, device: torch.device) -> EvalMetrics:
     model.eval()
-    loader = get_coco_dataloader(model_name, "valid")
+    loader = get_coco_dataloader(model_name, Split.VALID)
 
-    dataset_root = cfg.models.get(model_name, {}).get("dataset", "")
+    dataset_root = cfg.model_cfg(model_name)["dataset"]
     coco_gt = COCO(f"{dataset_root}/valid/_annotations.coco.json")
 
     bbox_results = []
@@ -73,7 +74,7 @@ def evaluate_coco(model, model_name: str, device: torch.device) -> dict:
                         "score": score,
                     })
 
-    metrics = {"bbox_ap": 0.0, "segm_ap": 0.0}
+    metrics = EvalMetrics()
 
     if not bbox_results:
         return metrics
@@ -88,12 +89,15 @@ def evaluate_coco(model, model_name: str, device: torch.device) -> dict:
         coco_eval.evaluate()
         coco_eval.accumulate()
         coco_eval.summarize()
-        metrics[f"{iou_type}_ap"] = coco_eval.stats[0]
+        if iou_type == "bbox":
+            metrics.bbox_ap = coco_eval.stats[0]
+        else:
+            metrics.segm_ap = coco_eval.stats[0]
 
     return metrics
 
 
-@register_pipeline("mask_rcnn", "validate")
+@register_pipeline("mask_rcnn", PipelineMode.VALIDATE)
 def run_validate(model_name: str, weights: str):
     device = torch.device(cfg.torch.device)
 
@@ -101,5 +105,5 @@ def run_validate(model_name: str, weights: str):
     model.load_state_dict(torch.load(weights, map_location=device, weights_only=True))
 
     metrics = evaluate_coco(model, model_name, device)
-    logger.info("bbox AP: %.4f", metrics["bbox_ap"])
-    logger.info("segm AP: %.4f", metrics["segm_ap"])
+    logger.info("bbox AP: %.4f", metrics.bbox_ap)
+    logger.info("segm AP: %.4f", metrics.segm_ap)

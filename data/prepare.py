@@ -113,8 +113,8 @@ def _save_split(data: dict, images_src: Path, dest: Path):
 
 def create_dataset(dataset_name: str, url: str):
     ds_cfg = cfg.datasets[dataset_name]
-    out_dir = Path(ds_cfg["dir"])
-    val_split = ds_cfg.get("val_split", 0.15)
+    out_dir = Path(ds_cfg.dir)
+    val_split = ds_cfg.val_split
 
     with tempfile.TemporaryDirectory() as tmp:
         raw_dir = Path(tmp) / "raw"

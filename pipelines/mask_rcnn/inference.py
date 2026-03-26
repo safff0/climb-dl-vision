@@ -10,6 +10,7 @@ from torchvision.ops import nms
 from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks
 
 from common.config import cfg
+from common.types import PipelineMode
 from models import create_model
 from pipelines import register_pipeline
 
@@ -94,7 +95,7 @@ def _visualize(img_tensor, boxes, masks, labels, category_names):
     return img_uint8
 
 
-@register_pipeline("mask_rcnn", "inference")
+@register_pipeline("mask_rcnn", PipelineMode.INFERENCE)
 def run_inference(model_name: str, weights: str, output: str, preview: bool = False):
     device = torch.device(cfg.torch.device)
 
@@ -102,8 +103,8 @@ def run_inference(model_name: str, weights: str, output: str, preview: bool = Fa
     model.load_state_dict(torch.load(weights, map_location=device, weights_only=True))
     model.eval()
 
-    mcfg = cfg.models.get(model_name, {})
-    dataset_root = mcfg.get("dataset", "")
+    mcfg = cfg.model_cfg(model_name)
+    dataset_root = mcfg["dataset"]
     use_tiles = mcfg.get("tile_inference", False)
     tile_size = mcfg.get("tile_size", 1024)
     tile_overlap = mcfg.get("tile_overlap", 128)
