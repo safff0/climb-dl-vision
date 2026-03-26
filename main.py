@@ -35,12 +35,13 @@ def validate(model_name, weights):
 @cli.command()
 @click.argument("model_name")
 @click.option("--weights", "-w", required=True)
+@click.option("--image-dir", "-d", required=True)
 @click.option("--output", "-o", default="results/")
 @click.option("--preview", is_flag=True, default=False)
-def inference(model_name, weights, output, preview):
+def inference(model_name, weights, image_dir, output, preview):
     pipeline_name = cfg.model_cfg(model_name)["pipeline"]
     run = get_pipeline(pipeline_name, PipelineMode.INFERENCE)
-    run(model_name, weights, output, preview=preview)
+    run(model_name, weights, output, image_dir=image_dir, preview=preview)
 
 
 @cli.command("create-dataset")

@@ -96,7 +96,7 @@ def _visualize(img_tensor, boxes, masks, labels, category_names):
 
 
 @register_pipeline("mask_rcnn", PipelineMode.INFERENCE)
-def run_inference(model_name: str, weights: str, output: str, preview: bool = False):
+def run_inference(model_name: str, weights: str, output: str, image_dir: str, preview: bool = False):
     device = torch.device(cfg.torch.device)
 
     model = create_model(model_name).to(device)
@@ -110,7 +110,7 @@ def run_inference(model_name: str, weights: str, output: str, preview: bool = Fa
     tile_overlap = mcfg.get("tile_overlap", 128)
 
     category_names = _load_category_names(dataset_root)
-    test_dir = Path(dataset_root) / "test"
+    test_dir = Path(image_dir)
     out_dir = Path(output)
     out_dir.mkdir(parents=True, exist_ok=True)
 

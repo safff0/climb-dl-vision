@@ -8,6 +8,7 @@ import torch
 from PIL import Image
 from torchvision import transforms as T
 from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks
+from tqdm import tqdm
 
 from common.config import cfg
 from common.types import PipelineMode
@@ -46,7 +47,7 @@ def _crop_and_prepare(img_tensor, box, mask, crop_size, padding, use_mask):
 
 
 @register_pipeline("hold_classifier", PipelineMode.INFERENCE)
-def run_inference(model_name: str, weights: str, output: str, preview: bool = False):
+def run_inference(model_name: str, weights: str, output: str, image_dir: str, preview: bool = False):
     device = torch.device(cfg.torch.device)
     mcfg = cfg.model_cfg(model_name)
     crop_size = mcfg["crop_size"]
@@ -70,9 +71,7 @@ def run_inference(model_name: str, weights: str, output: str, preview: bool = Fa
 
     hold_label_ids = [cid for cid, name in seg_cats.items() if name.lower() == "hold"]
 
-    test_dir = Path(seg_dataset_root) / "test"
-    if not test_dir.exists():
-        test_dir = Path(mcfg["dataset"]) / "test"
+    test_dir = Path(image_dir)
 
     out_dir = Path(output)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -83,7 +82,7 @@ def run_inference(model_name: str, weights: str, output: str, preview: bool = Fa
     to_tensor = T.ToTensor()
 
     with torch.no_grad():
-        for idx, img_path in enumerate(image_paths):
+        for idx, img_path in tqdm(enumerate(image_paths), desc="Processing images"):
             img = Image.open(img_path).convert("RGB")
             img_tensor = to_tensor(img).to(device)
 
