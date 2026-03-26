@@ -17,7 +17,7 @@ from models import create_model
 from pipelines import register_pipeline
 
 logger = logging.getLogger(__name__)
-SCORE_THRESHOLD = 0.5
+SCORE_THRESHOLD = 0.7
 
 
 def _load_segmentor(segmentor_model: str, weights_path: str, device):
@@ -112,9 +112,6 @@ def run_inference(model_name: str, weights: str, output: str, image_dir: str, pr
 
             img_uint8 = (img_tensor * 255).to(torch.uint8).cpu()
             all_masks = torch.stack([a["mask"].cpu() for a in annotations]) if annotations else torch.zeros(0, img_tensor.shape[1], img_tensor.shape[2], dtype=torch.bool)
-
-            if all_masks.shape[0] > 0:
-                img_uint8 = draw_segmentation_masks(img_uint8, all_masks, alpha=0.4)
 
             if annotations:
                 box_tensor = torch.stack([a["box"].cpu() for a in annotations])

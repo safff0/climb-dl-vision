@@ -49,14 +49,14 @@ models:
     segmentor_model: mask_rcnn_hold
     segmentor_weights: "weights/hold.pt"
     train:
-      batch_size: 64
-      lr: 0.001
-      epochs: 30
+      batch_size: 16
+      lr: 0.0001
+      epochs: 10
       scheduler: cosine
-      freeze_backbone_epochs: 5
-      freeze_backbone_lr: 0.01
+      freeze_backbone_epochs: 3
+      freeze_backbone_lr: 0.005
     validate:
-      batch_size: 128
+      batch_size: 16
 
   hold_type_classifier:
     pipeline: hold_classifier
@@ -69,11 +69,11 @@ models:
     segmentor_model: mask_rcnn_hold
     segmentor_weights: "weights/hold.pt"
     train:
-      batch_size: 64
-      lr: 0.0001
-      epochs: 30
+      batch_size: 16
+      lr: 0.00001
+      epochs: 20
       scheduler: cosine
-      freeze_backbone_epochs: 10
+      freeze_backbone_epochs: 5
       freeze_backbone_lr: 0.005
     validate:
-      batch_size: 128
+      batch_size: 16
