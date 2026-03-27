@@ -1,5 +1,6 @@
 import json
 import logging
+import random
 from pathlib import Path
 
 import torch
@@ -16,6 +17,23 @@ from models import create_model
 logger = logging.getLogger(__name__)
 
 IOU_THRESHOLD = 0.3
+SCORE_THRESHOLD = 0.1
+JITTER_RANGE = 0.15
+
+
+def _jitter_box(box: list[float], iw: int, ih: int) -> list[int]:
+    x1, y1, x2, y2 = box
+    w, h = x2 - x1, y2 - y1
+    dx = random.uniform(-JITTER_RANGE, JITTER_RANGE) * w
+    dy = random.uniform(-JITTER_RANGE, JITTER_RANGE) * h
+    dw = random.uniform(-JITTER_RANGE * 0.5, JITTER_RANGE * 0.5) * w
+    dh = random.uniform(-JITTER_RANGE * 0.5, JITTER_RANGE * 0.5) * h
+    return [
+        max(0, int(x1 + dx - dw)),
+        max(0, int(y1 + dy - dh)),
+        min(iw, int(x2 + dx + dw)),
+        min(ih, int(y2 + dy + dh)),
+    ]
 
 
 def prepare_segmentor_crops(classifier_model_name: str):
@@ -33,6 +51,7 @@ def prepare_segmentor_crops(classifier_model_name: str):
 
     to_tensor = T.ToTensor()
     output_root = Path(dataset_root) / "segmentor_crops"
+    random.seed(cfg.torch.seed)
 
     for split in [Split.TRAIN, Split.VALID]:
         split_dir = Path(dataset_root) / split
@@ -53,23 +72,15 @@ def prepare_segmentor_crops(classifier_model_name: str):
         out_split.mkdir(parents=True, exist_ok=True)
         crop_records: list[CropRecord] = []
         crop_idx = 0
+        matched_count = 0
+        fallback_count = 0
+        total_gt = 0
 
         for img_id in tqdm(coco.getImgIds(), desc=f"[{split}] Segmentor crops"):
             img_info = coco.loadImgs(img_id)[0]
             img = Image.open(split_dir / img_info["file_name"]).convert("RGB")
             img_tensor = to_tensor(img).to(device)
             iw, ih = img.size
-
-            with torch.no_grad():
-                pred = segmentor([img_tensor])[0]
-
-            pred_boxes = pred["boxes"].cpu()
-            pred_scores = pred["scores"].cpu()
-            keep = pred_scores > 0.3
-            pred_boxes = pred_boxes[keep]
-
-            if len(pred_boxes) == 0:
-                continue
 
             ann_ids = coco.getAnnIds(imgIds=img_id)
             anns = coco.loadAnns(ann_ids)
@@ -89,26 +100,62 @@ def prepare_segmentor_crops(classifier_model_name: str):
             if not gt_boxes:
                 continue
 
+            total_gt += len(gt_boxes)
             gt_boxes_t = torch.tensor(gt_boxes, dtype=torch.float32)
-            ious = box_iou(pred_boxes, gt_boxes_t)
+
+            with torch.no_grad():
+                pred = segmentor([img_tensor])[0]
+
+            pred_boxes = pred["boxes"].cpu()
+            pred_scores = pred["scores"].cpu()
+            keep = pred_scores > SCORE_THRESHOLD
+            pred_boxes = pred_boxes[keep]
 
             matched_gt = set()
-            for pred_i in range(len(pred_boxes)):
-                best_gt = ious[pred_i].argmax().item()
-                best_iou = ious[pred_i, best_gt].item()
-                if best_iou < IOU_THRESHOLD:
-                    continue
-                if best_gt in matched_gt:
-                    continue
-                matched_gt.add(best_gt)
+            if len(pred_boxes) > 0:
+                ious = box_iou(pred_boxes, gt_boxes_t)
 
-                box = pred_boxes[pred_i]
-                label = gt_labels[best_gt]
-                x1, y1, x2, y2 = box.int().tolist()
-                x1 = max(0, x1 - padding)
-                y1 = max(0, y1 - padding)
-                x2 = min(iw, x2 + padding)
-                y2 = min(ih, y2 + padding)
+                for pred_i in range(len(pred_boxes)):
+                    best_gt = ious[pred_i].argmax().item()
+                    best_iou = ious[pred_i, best_gt].item()
+                    if best_iou < IOU_THRESHOLD or best_gt in matched_gt:
+                        continue
+                    matched_gt.add(best_gt)
+
+                    box = pred_boxes[pred_i]
+                    label = gt_labels[best_gt]
+                    x1, y1, x2, y2 = box.int().tolist()
+                    x1 = max(0, x1 - padding)
+                    y1 = max(0, y1 - padding)
+                    x2 = min(iw, x2 + padding)
+                    y2 = min(ih, y2 + padding)
+
+                    crop = img.crop((x1, y1, x2, y2))
+                    crop = crop.resize((crop_size, crop_size), Image.BILINEAR)
+
+                    crop_name = f"crop_{crop_idx:06d}.jpg"
+                    crop.save(out_split / crop_name)
+                    crop_records.append(CropRecord(
+                        file=crop_name,
+                        label=label,
+                        source_image=img_info["file_name"],
+                        pred_box=[x1, y1, x2, y2],
+                    ))
+                    crop_idx += 1
+                    matched_count += 1
+
+            for gt_i in range(len(gt_boxes)):
+                if gt_i in matched_gt:
+                    continue
+
+                gt_box = gt_boxes[gt_i]
+                label = gt_labels[gt_i]
+
+                jittered = _jitter_box(gt_box, iw, ih)
+                x1 = max(0, jittered[0] - padding)
+                y1 = max(0, jittered[1] - padding)
+                x2 = min(iw, jittered[2] + padding)
+                y2 = min(ih, jittered[3] + padding)
 
                 crop = img.crop((x1, y1, x2, y2))
                 crop = crop.resize((crop_size, crop_size), Image.BILINEAR)
@@ -122,6 +169,7 @@ def prepare_segmentor_crops(classifier_model_name: str):
                     pred_box=[x1, y1, x2, y2],
                 ))
                 crop_idx += 1
+                fallback_count += 1
 
         meta = CropMeta(
             class_names=class_names,
@@ -131,4 +179,7 @@ def prepare_segmentor_crops(classifier_model_name: str):
         with open(out_split / "labels.json", "w") as f:
             json.dump(meta.to_dict(), f, indent=2)
 
-        logger.info("[%s] Saved %d crops to %s", split, len(crop_records), out_split)
+        logger.info(
+            "[%s] Saved %d crops (%d matched, %d fallback GT+jitter, %d total GT)",
+            split, len(crop_records), matched_count, fallback_count, total_gt,
+        )
