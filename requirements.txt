@@ -9,3 +9,4 @@ matplotlib
 tqdm
 gdown
 scikit-learn
+torch-geometric

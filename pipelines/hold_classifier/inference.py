@@ -17,6 +17,7 @@ from common.types import Detection, ImagePredictions, PipelineMode, SegClass
 from data.crop_dataset import get_dataset_info
 from models import create_model
 from pipelines import register_pipeline
+from data.gnn_dataset import build_graph
 from pipelines.hold_classifier.postprocess import cluster_colors
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ def _load_model(model_name: str, weights_path: str, device):
     return model
 
 
-def _crop_and_prepare(img_tensor, box, crop_size, padding):
+def _crop_and_prepare(img_tensor, box, crop_size, padding, mask=None):
     _, h, w = img_tensor.shape
     x1, y1, x2, y2 = box.int().tolist()
     x1 = max(0, x1 - padding)
@@ -40,6 +41,11 @@ def _crop_and_prepare(img_tensor, box, crop_size, padding):
 
     crop = img_tensor[:, y1:y2, x1:x2]
     crop = T.Resize((crop_size, crop_size))(crop)
+
+    if mask is not None:
+        mask_crop = mask[y1:y2, x1:x2].unsqueeze(0).float()
+        mask_crop = T.Resize((crop_size, crop_size))(mask_crop)
+        crop = torch.cat([crop, mask_crop], dim=0)
 
     return crop.unsqueeze(0)
 
@@ -61,8 +67,8 @@ def _class_aware_nms(boxes, scores, labels, masks, iou_threshold=0.5):
     return boxes[keep], scores[keep], labels[keep], masks[keep]
 
 
-def _classify_crop(classifier, img_tensor, box, crop_size, padding, class_names, device):
-    crop = _crop_and_prepare(img_tensor, box, crop_size, padding)
+def _classify_crop(classifier, img_tensor, box, crop_size, padding, class_names, device, mask=None):
+    crop = _crop_and_prepare(img_tensor, box, crop_size, padding, mask=mask)
     logits = classifier(crop.to(device))
     probs = F.softmax(logits, dim=1).squeeze(0).cpu()
     pred_idx = probs.argmax().item()
@@ -76,6 +82,7 @@ def run_full_inference(
     output: str,
     color_weights: str = None,
     type_weights: str = None,
+    gnn_weights: str = None,
     preview: bool = False,
 ):
     device = torch.device(cfg.torch.device)
@@ -88,11 +95,13 @@ def run_full_inference(
     color_names = None
     color_crop_size = 224
     color_padding = 16
+    color_use_mask = False
     if color_weights:
         color_model_name = "hold_color_classifier"
         color_mcfg = cfg.model_cfg(color_model_name)
         color_crop_size = color_mcfg["crop_size"]
         color_padding = color_mcfg["crop_padding"]
+        color_use_mask = color_mcfg.get("use_mask_channel", False)
         color_classifier = _load_model(color_model_name, color_weights, device)
         color_names = get_dataset_info(color_model_name).class_names
 
@@ -100,13 +109,22 @@ def run_full_inference(
     type_names = None
     type_crop_size = 224
     type_padding = 16
+    type_use_mask = False
     if type_weights:
         type_model_name = "hold_type_classifier"
         type_mcfg = cfg.model_cfg(type_model_name)
         type_crop_size = type_mcfg["crop_size"]
         type_padding = type_mcfg["crop_padding"]
+        type_use_mask = type_mcfg.get("use_mask_channel", False)
         type_classifier = _load_model(type_model_name, type_weights, device)
         type_names = get_dataset_info(type_model_name).class_names
+
+    gnn_model = None
+    gnn_k = 6
+    if gnn_weights:
+        gnn_mcfg = cfg.model_cfg("color_gnn")
+        gnn_k = gnn_mcfg.get("k_neighbors", 6)
+        gnn_model = _load_model("color_gnn", gnn_weights, device)
 
     seg_dataset_root = seg_mcfg["dataset"]
     seg_ann_path = Path(seg_dataset_root) / "train" / "_annotations.coco.json"
@@ -127,6 +145,7 @@ def run_full_inference(
     with torch.no_grad():
         for idx, img_path in tqdm(enumerate(image_paths), total=len(image_paths), desc="Inference"):
             img = Image.open(img_path).convert("RGB")
+            iw, ih = img.size
             img_tensor = to_tensor(img).to(device)
 
             seg_pred = segmentor([img_tensor])[0]
@@ -153,21 +172,58 @@ def run_full_inference(
                 )
 
                 if is_hold:
+                    det_mask = masks[i].squeeze(0)
+
                     if color_classifier is not None:
+                        color_mask = det_mask if color_use_mask else None
                         det.color, det.color_probs = _classify_crop(
                             color_classifier, img_tensor, boxes[i],
                             color_crop_size, color_padding, color_names, device,
+                            mask=color_mask,
                         )
 
                     if type_classifier is not None:
+                        type_mask = det_mask if type_use_mask else None
                         det.hold_type, det.type_probs = _classify_crop(
                             type_classifier, img_tensor, boxes[i],
                             type_crop_size, type_padding, type_names, device,
+                            mask=type_mask,
                         )
 
                 detections.append(det)
 
-            if color_classifier is not None:
+            if gnn_model is not None and color_classifier is not None:
+                hold_dets = [d for d in detections if d.color_probs is not None]
+                if len(hold_dets) >= 2:
+                    gnn_boxes = torch.stack([d.box for d in hold_dets])
+                    gnn_logits = torch.tensor([
+                        list(d.color_probs.values()) for d in hold_dets
+                    ])
+                    gnn_scores = torch.tensor([d.score for d in hold_dets])
+                    graph = build_graph(gnn_boxes, gnn_logits, gnn_scores, iw, ih, k=gnn_k)
+                    if graph is not None:
+                        graph = graph.to(device)
+                        refined_logits, route_logits = gnn_model(graph)
+                        refined_probs = F.softmax(refined_logits, dim=1).cpu()
+                        for j, d in enumerate(hold_dets):
+                            pred_idx = refined_probs[j].argmax().item()
+                            d.color = color_names[pred_idx]
+                            d.color_probs = {
+                                name: round(refined_probs[j][ci].item(), 4)
+                                for ci, name in enumerate(color_names)
+                            }
+
+                        route_pred = (route_logits > 0).cpu()
+                        edge_index = graph.edge_index.cpu()
+                        for e in range(edge_index.shape[1]):
+                            if route_pred[e]:
+                                src_det = hold_dets[edge_index[0, e].item()]
+                                dst_det = hold_dets[edge_index[1, e].item()]
+                                if src_det.color_cluster is None:
+                                    src_det.color_cluster = 0
+                                dst_det.color_cluster = src_det.color_cluster
+
+            if color_classifier is not None and gnn_model is None:
                 detections = cluster_colors(detections)
 
             img_preds = ImagePredictions(image=img_path.name, detections=detections)

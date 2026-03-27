@@ -3,8 +3,11 @@ import click
 from common.config import cfg
 from common.logging import setup_logging
 from common.types import PipelineMode
+from data.gnn_prepare import prepare_gnn_data
 from data.prepare import create_dataset
+from data.segmentor_crops import prepare_segmentor_crops
 from pipelines import get_pipeline
+from pipelines.hold_classifier.inference import run_full_inference
 
 setup_logging()
 
@@ -48,25 +51,31 @@ def inference(model_name, weights, image_dir, output, preview):
 @click.option("--segmentor-weights", "-s", required=True)
 @click.option("--color-weights", "-c", default=None)
 @click.option("--type-weights", "-t", default=None)
+@click.option("--gnn-weights", "-g", default=None)
 @click.option("--image-dir", "-d", required=True)
 @click.option("--output", "-o", default="results/")
 @click.option("--preview", is_flag=True, default=False)
-def full_inference(segmentor_weights, color_weights, type_weights, image_dir, output, preview):
-    from pipelines.hold_classifier.inference import run_full_inference
+def full_inference(segmentor_weights, color_weights, type_weights, gnn_weights, image_dir, output, preview):
     run_full_inference(
         segmentor_weights=segmentor_weights,
         image_dir=image_dir,
         output=output,
         color_weights=color_weights,
         type_weights=type_weights,
+        gnn_weights=gnn_weights,
         preview=preview,
     )
+
+
+@cli.command("prepare-gnn-data")
+@click.argument("model_name")
+def prepare_gnn_data_cmd(model_name):
+    prepare_gnn_data(model_name)
 
 
 @cli.command("prepare-crops")
 @click.argument("model_name")
 def prepare_crops(model_name):
-    from data.segmentor_crops import prepare_segmentor_crops
     prepare_segmentor_crops(model_name)
 
 

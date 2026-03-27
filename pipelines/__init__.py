@@ -16,5 +16,6 @@ def get_pipeline(name: str, mode: PipelineMode) -> Callable:
     return PIPELINE_REGISTRY[name][mode]
 
 
+import pipelines.color_gnn
 import pipelines.hold_classifier
 import pipelines.mask_rcnn

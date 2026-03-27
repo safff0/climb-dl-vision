@@ -123,14 +123,18 @@ class CropRecord:
     label: int = 0
     source_image: str = ""
     pred_box: list[int] = field(default_factory=list)
+    mask_file: str | None = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "file": self.file,
             "label": self.label,
             "source_image": self.source_image,
             "pred_box": self.pred_box,
         }
+        if self.mask_file is not None:
+            d["mask_file"] = self.mask_file
+        return d
 
 
 @dataclass
@@ -151,5 +155,9 @@ class CropMeta:
         return cls(
             class_names=d["class_names"],
             num_classes=d["num_classes"],
-            crops=[CropRecord(**c) for c in d["crops"]],
+            crops=[CropRecord(
+                file=c["file"], label=c["label"],
+                source_image=c["source_image"], pred_box=c["pred_box"],
+                mask_file=c.get("mask_file"),
+            ) for c in d["crops"]],
         )

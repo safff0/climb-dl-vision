@@ -119,12 +119,13 @@ class CropDataset(Dataset):
 
 
 class SegmentorCropDataset(Dataset):
-    def __init__(self, crops_dir: str, transforms=None):
+    def __init__(self, crops_dir: str, use_mask: bool = False, transforms=None):
         self.root = Path(crops_dir)
         with open(self.root / "labels.json") as f:
             self.meta = CropMeta.from_dict(json.load(f))
         self.class_names = self.meta.class_names
         self.num_classes = self.meta.num_classes
+        self.use_mask = use_mask
         self.transforms = transforms
 
     def __len__(self):
@@ -139,6 +140,13 @@ class SegmentorCropDataset(Dataset):
             img = self.transforms(img)
         else:
             img = T.ToTensor()(img)
+
+        if self.use_mask and record.mask_file is not None:
+            mask_pil = Image.open(self.root / record.mask_file).convert("L")
+            mask_tensor = T.ToTensor()(mask_pil)
+            img = torch.cat([img, mask_tensor], dim=0)
+        elif self.use_mask:
+            img = torch.cat([img, torch.ones(1, img.shape[1], img.shape[2])], dim=0)
 
         return img, label
 
@@ -177,7 +185,7 @@ def get_crop_dataloader(model_name: str, split: Split) -> DataLoader:
     segmentor_crops_dir = Path(dataset_root) / "segmentor_crops" / split
     if (segmentor_crops_dir / "labels.json").exists():
         logger.info("Using segmentor crops from %s", segmentor_crops_dir)
-        dataset = SegmentorCropDataset(str(segmentor_crops_dir), transforms)
+        dataset = SegmentorCropDataset(str(segmentor_crops_dir), use_mask, transforms)
     else:
         dataset = CropDataset(dataset_root, split, crop_size, padding, use_mask, transforms)
 

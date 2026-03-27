@@ -13,6 +13,8 @@ datasets:
   hold_type:
     dir: "datasets/hold_type"
     val_split: 0.15
+  color_gnn:
+    dir: "datasets/color_gnn"
 
 models:
   mask_rcnn_hold:
@@ -44,7 +46,7 @@ models:
     backbone: convnext_tiny
     crop_size: 224
     crop_padding: 16
-    use_mask_channel: false
+    use_mask_channel: true
     augment_mode: color
     segmentor_model: mask_rcnn_hold
     segmentor_weights: "weights/hold.pt"
@@ -77,3 +79,22 @@ models:
       freeze_backbone_lr: 0.005
     validate:
       batch_size: 16
+
+  color_gnn:
+    pipeline: color_gnn
+    dataset: "datasets/color_gnn"
+    hidden_dim: 128
+    num_layers: 2
+    k_neighbors: 6
+    color_model: hold_color_classifier
+    segmentor_model: mask_rcnn_hold
+    segmentor_weights: "weights/hold.pt"
+    color_weights: "weights/color.pt"
+    route_loss_weight: 0.5
+    train:
+      batch_size: 8
+      lr: 0.001
+      epochs: 50
+      scheduler: cosine
+    validate:
+      batch_size: 8

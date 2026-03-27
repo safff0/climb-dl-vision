@@ -3,6 +3,7 @@ import logging
 import random
 from pathlib import Path
 
+import numpy as np
 import torch
 from PIL import Image
 from pycocotools.coco import COCO
@@ -34,6 +35,24 @@ def _jitter_box(box: list[float], iw: int, ih: int) -> list[int]:
         min(iw, int(x2 + dx + dw)),
         min(ih, int(y2 + dy + dh)),
     ]
+
+
+def _save_crop_and_mask(img, mask_np, x1, y1, x2, y2, crop_size, crop_idx, out_split):
+    crop = img.crop((x1, y1, x2, y2))
+    crop = crop.resize((crop_size, crop_size), Image.BILINEAR)
+
+    crop_name = f"crop_{crop_idx:06d}.jpg"
+    crop.save(out_split / crop_name)
+
+    mask_name = None
+    if mask_np is not None:
+        mask_crop = mask_np[y1:y2, x1:x2]
+        mask_pil = Image.fromarray((mask_crop * 255).astype(np.uint8))
+        mask_pil = mask_pil.resize((crop_size, crop_size), Image.BILINEAR)
+        mask_name = f"mask_{crop_idx:06d}.png"
+        mask_pil.save(out_split / mask_name)
+
+    return crop_name, mask_name
 
 
 def prepare_segmentor_crops(classifier_model_name: str):
@@ -87,6 +106,7 @@ def prepare_segmentor_crops(classifier_model_name: str):
 
             gt_boxes = []
             gt_labels = []
+            gt_masks = []
             for ann in anns:
                 x, y, w, h = ann["bbox"]
                 if w < 1 or h < 1:
@@ -96,6 +116,7 @@ def prepare_segmentor_crops(classifier_model_name: str):
                     continue
                 gt_boxes.append([x, y, x + w, y + h])
                 gt_labels.append(cat_idx)
+                gt_masks.append(coco.annToMask(ann))
 
             if not gt_boxes:
                 continue
@@ -108,8 +129,10 @@ def prepare_segmentor_crops(classifier_model_name: str):
 
             pred_boxes = pred["boxes"].cpu()
             pred_scores = pred["scores"].cpu()
+            pred_masks = pred["masks"].cpu()
             keep = pred_scores > SCORE_THRESHOLD
             pred_boxes = pred_boxes[keep]
+            pred_masks = pred_masks[keep]
 
             matched_gt = set()
             if len(pred_boxes) > 0:
@@ -130,16 +153,17 @@ def prepare_segmentor_crops(classifier_model_name: str):
                     x2 = min(iw, x2 + padding)
                     y2 = min(ih, y2 + padding)
 
-                    crop = img.crop((x1, y1, x2, y2))
-                    crop = crop.resize((crop_size, crop_size), Image.BILINEAR)
+                    mask_np = (pred_masks[pred_i, 0] > 0.5).numpy().astype(np.uint8)
 
-                    crop_name = f"crop_{crop_idx:06d}.jpg"
-                    crop.save(out_split / crop_name)
+                    crop_name, mask_name = _save_crop_and_mask(
+                        img, mask_np, x1, y1, x2, y2, crop_size, crop_idx, out_split,
+                    )
                     crop_records.append(CropRecord(
                         file=crop_name,
                         label=label,
                         source_image=img_info["file_name"],
                         pred_box=[x1, y1, x2, y2],
+                        mask_file=mask_name,
                     ))
                     crop_idx += 1
                     matched_count += 1
@@ -150,6 +174,7 @@ def prepare_segmentor_crops(classifier_model_name: str):
 
                 gt_box = gt_boxes[gt_i]
                 label = gt_labels[gt_i]
+                gt_mask = gt_masks[gt_i]
 
                 jittered = _jitter_box(gt_box, iw, ih)
                 x1 = max(0, jittered[0] - padding)
@@ -157,16 +182,15 @@ def prepare_segmentor_crops(classifier_model_name: str):
                 x2 = min(iw, jittered[2] + padding)
                 y2 = min(ih, jittered[3] + padding)
 
-                crop = img.crop((x1, y1, x2, y2))
-                crop = crop.resize((crop_size, crop_size), Image.BILINEAR)
-
-                crop_name = f"crop_{crop_idx:06d}.jpg"
-                crop.save(out_split / crop_name)
+                crop_name, mask_name = _save_crop_and_mask(
+                    img, gt_mask, x1, y1, x2, y2, crop_size, crop_idx, out_split,
+                )
                 crop_records.append(CropRecord(
                     file=crop_name,
                     label=label,
                     source_image=img_info["file_name"],
                     pred_box=[x1, y1, x2, y2],
+                    mask_file=mask_name,
                 ))
                 crop_idx += 1
                 fallback_count += 1
