@@ -17,6 +17,15 @@ from common.types import AugmentMode, CropMeta, DatasetInfo, Split
 logger = logging.getLogger(__name__)
 
 
+def _apply_augmentations(tensor: torch.Tensor, augmentations) -> torch.Tensor:
+    if augmentations is None:
+        return tensor
+    if tensor.shape[0] <= 3:
+        return augmentations(tensor)
+    rgb = augmentations(tensor[:3])
+    return torch.cat([rgb, tensor[3:]], dim=0)
+
+
 def _get_type_augmentations():
     return T.Compose([
         T.RandomHorizontalFlip(),
@@ -80,8 +89,7 @@ class CropDataset(Dataset):
         img_tensor = T.ToTensor()(img)
         crop = crop_and_normalize(img_tensor, box, self.crop_size, self.padding, mask=mask)
 
-        if self.augmentations:
-            crop = self.augmentations(crop)
+        crop = _apply_augmentations(crop, self.augmentations)
 
         return crop, label
 
@@ -127,8 +135,7 @@ class SegmentorCropDataset(Dataset):
 
         crop = normalize_tensor(img_tensor, mask_tensor=mask_tensor)
 
-        if self.augmentations:
-            crop = self.augmentations(crop)
+        crop = _apply_augmentations(crop, self.augmentations)
 
         return crop, label
 
