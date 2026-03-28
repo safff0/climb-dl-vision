@@ -39,18 +39,20 @@ def _unfreeze_all(model):
         param.requires_grad = True
 
 
-def _evaluate_accuracy(model, loader, device):
+def _evaluate(model, loader, criterion, device):
     model.eval()
     correct = 0
     total = 0
+    total_loss = 0.0
     with torch.no_grad():
         for images, labels in loader:
             images, labels = images.to(device), labels.to(device)
             outputs = model(images)
+            total_loss += criterion(outputs, labels).item()
             preds = outputs.argmax(dim=1)
             correct += (preds == labels).sum().item()
             total += labels.size(0)
-    return correct / max(total, 1)
+    return correct / max(total, 1), total_loss / max(len(loader), 1)
 
 
 @register_pipeline("hold_classifier", PipelineMode.TRAIN)
@@ -89,7 +91,7 @@ def run_train(model_name: str, output: str):
             pbar.set_postfix(loss=f"{loss.item():.4f}")
 
         avg_loss = total_loss / max(len(train_loader), 1)
-        val_acc = _evaluate_accuracy(model, val_loader, device)
+        val_acc, val_loss = _evaluate(model, val_loader, criterion, device)
 
         if val_acc > best_acc:
             best_acc = val_acc
@@ -97,8 +99,8 @@ def run_train(model_name: str, output: str):
 
         logger.info(
             "[freeze] Epoch %d/%d\n"
-            "  train_loss: %.4f  val_acc: %.4f  best_acc: %.4f",
-            epoch + 1, tcfg.freeze_backbone_epochs, avg_loss, val_acc, best_acc,
+            "  train_loss: %.4f  val_loss: %.4f  val_acc: %.4f  best_acc: %.4f",
+            epoch + 1, tcfg.freeze_backbone_epochs, avg_loss, val_loss, val_acc, best_acc,
         )
 
     _unfreeze_all(model)
@@ -122,7 +124,7 @@ def run_train(model_name: str, output: str):
 
         scheduler.step()
         avg_loss = total_loss / max(len(train_loader), 1)
-        val_acc = _evaluate_accuracy(model, val_loader, device)
+        val_acc, val_loss = _evaluate(model, val_loader, criterion, device)
         current_lr = optimizer.param_groups[0]["lr"]
 
         if val_acc > best_acc:
@@ -131,9 +133,10 @@ def run_train(model_name: str, output: str):
 
         logger.info(
             "[finetune] Epoch %d/%d\n"
-            "  train_loss: %.4f  val_acc: %.4f  best_acc: %.4f\n"
+            "  train_loss: %.4f  val_loss: %.4f\n"
+            "  val_acc: %.4f  best_acc: %.4f\n"
             "  lr: %.6f",
-            epoch + 1, finetune_epochs, avg_loss, val_acc, best_acc, current_lr,
+            epoch + 1, finetune_epochs, avg_loss, val_loss, val_acc, best_acc, current_lr,
         )
 
     last_path = out_path.with_stem(out_path.stem + "_last")

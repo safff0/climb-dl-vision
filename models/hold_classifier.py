@@ -28,8 +28,14 @@ def _build_classifier(model_name: str):
             new_conv.bias.copy_(old_conv.bias)
         model.features[0][0] = new_conv
 
+    dropout = mcfg.get("dropout", 0.3)
     in_features = model.classifier[2].in_features
-    model.classifier[2] = nn.Linear(in_features, info.num_classes)
+    model.classifier = nn.Sequential(
+        model.classifier[0],
+        model.classifier[1],
+        nn.Dropout(p=dropout),
+        nn.Linear(in_features, info.num_classes),
+    )
 
     return model
 
