@@ -32,8 +32,11 @@ def _crop_and_classify(classifier, img_tensor, box, crop_size, padding, device, 
     crop = T.Resize((crop_size, crop_size))(crop)
 
     if use_mask and mask is not None:
-        mask_crop = mask[y1:y2, x1:x2].unsqueeze(0).float()
+        mask_crop = mask[y1:y2, x1:x2].to(cfg.torch.device).unsqueeze(0).float()
         mask_crop = T.Resize((crop_size, crop_size))(mask_crop)
+        crop = torch.cat([crop, mask_crop], dim=0)
+    elif use_mask:
+        mask_crop = torch.ones(1, crop_size, crop_size).to(cfg.torch.device)
         crop = torch.cat([crop, mask_crop], dim=0)
 
     logits = classifier(crop.unsqueeze(0).to(device))

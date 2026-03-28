@@ -49,14 +49,14 @@ models:
     use_mask_channel: true
     augment_mode: color
     segmentor_model: mask_rcnn_hold
-    segmentor_weights: "weights/hold.pt"
+    segmentor_weights: "weights/hold_v2.pt"
     train:
       batch_size: 16
       lr: 0.0001
       epochs: 10
       scheduler: cosine
       freeze_backbone_epochs: 3
-      freeze_backbone_lr: 0.005
+      freeze_backbone_lr: 0.002
     validate:
       batch_size: 16
 
@@ -88,8 +88,8 @@ models:
     k_neighbors: 6
     color_model: hold_color_classifier
     segmentor_model: mask_rcnn_hold
-    segmentor_weights: "weights/hold.pt"
-    color_weights: "weights/color.pt"
+    segmentor_weights: "weights/hold_v2.pt"
+    color_weights: "weights/hold_color_v5.pt"
     route_loss_weight: 0.5
     train:
       batch_size: 8
