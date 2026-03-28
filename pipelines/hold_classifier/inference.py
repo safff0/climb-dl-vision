@@ -13,11 +13,12 @@ from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks
 from tqdm import tqdm
 
 from common.config import cfg
+from common.preprocessing import crop_and_normalize
 from common.types import Detection, ImagePredictions, PipelineMode, SegClass
 from data.crop_dataset import get_dataset_info
+from data.gnn_dataset import build_graph
 from models import create_model
 from pipelines import register_pipeline
-from data.gnn_dataset import build_graph
 from pipelines.hold_classifier.postprocess import cluster_colors
 
 logger = logging.getLogger(__name__)
@@ -29,25 +30,6 @@ def _load_model(model_name: str, weights_path: str, device):
     model.load_state_dict(torch.load(weights_path, map_location=device, weights_only=True))
     model.eval()
     return model
-
-
-def _crop_and_prepare(img_tensor, box, crop_size, padding, mask=None):
-    _, h, w = img_tensor.shape
-    x1, y1, x2, y2 = box.int().tolist()
-    x1 = max(0, x1 - padding)
-    y1 = max(0, y1 - padding)
-    x2 = min(w, x2 + padding)
-    y2 = min(h, y2 + padding)
-
-    crop = img_tensor[:, y1:y2, x1:x2]
-    crop = T.Resize((crop_size, crop_size))(crop)
-
-    if mask is not None:
-        mask_crop = mask[y1:y2, x1:x2].unsqueeze(0).float()
-        mask_crop = T.Resize((crop_size, crop_size))(mask_crop)
-        crop = torch.cat([crop, mask_crop], dim=0)
-
-    return crop.unsqueeze(0)
 
 
 def _class_aware_nms(boxes, scores, labels, masks, iou_threshold=0.5):
@@ -68,8 +50,8 @@ def _class_aware_nms(boxes, scores, labels, masks, iou_threshold=0.5):
 
 
 def _classify_crop(classifier, img_tensor, box, crop_size, padding, class_names, device, mask=None):
-    crop = _crop_and_prepare(img_tensor, box, crop_size, padding, mask=mask)
-    logits = classifier(crop.to(device))
+    crop = crop_and_normalize(img_tensor, box, crop_size, padding, mask=mask)
+    logits = classifier(crop.unsqueeze(0).to(device))
     probs = F.softmax(logits, dim=1).squeeze(0).cpu()
     pred_idx = probs.argmax().item()
     prob_dict = {name: round(probs[i].item(), 4) for i, name in enumerate(class_names)}

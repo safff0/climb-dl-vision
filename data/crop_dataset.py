@@ -11,46 +11,37 @@ from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import transforms as T
 
 from common.config import cfg
+from common.preprocessing import crop_and_normalize, normalize_tensor
 from common.types import AugmentMode, CropMeta, DatasetInfo, Split
 
 logger = logging.getLogger(__name__)
 
 
-def _get_type_augmentations(crop_size):
+def _get_type_augmentations():
     return T.Compose([
         T.RandomHorizontalFlip(),
         T.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
         T.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0)),
-        T.Resize((crop_size, crop_size)),
-        T.ToTensor(),
     ])
 
 
-def _get_color_augmentations(crop_size):
+def _get_color_augmentations():
     return T.Compose([
         T.RandomHorizontalFlip(),
         T.RandomVerticalFlip(),
-        T.Resize((crop_size, crop_size)),
-        T.ToTensor(),
-    ])
-
-
-def _get_val_transforms(crop_size):
-    return T.Compose([
-        T.Resize((crop_size, crop_size)),
-        T.ToTensor(),
+        T.ColorJitter(brightness=0.15, contrast=0.15, saturation=0, hue=0),
     ])
 
 
 class CropDataset(Dataset):
     def __init__(self, root: str, split: Split, crop_size: int = 128,
-                 padding: int = 16, use_mask: bool = True, transforms=None):
+                 padding: int = 16, use_mask: bool = False, augmentations=None):
         self.root = Path(root) / split
         self.coco = COCO(str(self.root / "_annotations.coco.json"))
         self.crop_size = crop_size
         self.padding = padding
         self.use_mask = use_mask
-        self.transforms = transforms
+        self.augmentations = augmentations
 
         categories = self.coco.loadCats(self.coco.getCatIds())
         self.cat_id_to_idx = {}
@@ -80,28 +71,17 @@ class CropDataset(Dataset):
         ann = self.coco.loadAnns(ann_id)[0]
 
         x, y, w, h = ann["bbox"]
-        iw, ih = img.size
-        pad = self.padding
-        x1 = max(0, int(x) - pad)
-        y1 = max(0, int(y) - pad)
-        x2 = min(iw, int(x + w) + pad)
-        y2 = min(ih, int(y + h) + pad)
-        crop = img.crop((x1, y1, x2, y2))
+        box = torch.tensor([x, y, x + w, y + h], dtype=torch.float32)
 
+        mask = None
         if self.use_mask:
-            mask = self.coco.annToMask(ann)
-            mask_crop = mask[y1:y2, x1:x2]
-            mask_pil = Image.fromarray((mask_crop * 255).astype(np.uint8))
-            mask_pil = mask_pil.resize((self.crop_size, self.crop_size), Image.BILINEAR)
+            mask = torch.as_tensor(self.coco.annToMask(ann), dtype=torch.float32)
 
-        if self.transforms:
-            crop = self.transforms(crop)
-        else:
-            crop = T.Compose([T.Resize((self.crop_size, self.crop_size)), T.ToTensor()])(crop)
+        img_tensor = T.ToTensor()(img)
+        crop = crop_and_normalize(img_tensor, box, self.crop_size, self.padding, mask=mask)
 
-        if self.use_mask:
-            mask_tensor = T.ToTensor()(mask_pil)
-            crop = torch.cat([crop, mask_tensor], dim=0)
+        if self.augmentations:
+            crop = self.augmentations(crop)
 
         return crop, label
 
@@ -119,14 +99,14 @@ class CropDataset(Dataset):
 
 
 class SegmentorCropDataset(Dataset):
-    def __init__(self, crops_dir: str, use_mask: bool = False, transforms=None):
+    def __init__(self, crops_dir: str, use_mask: bool = False, augmentations=None):
         self.root = Path(crops_dir)
         with open(self.root / "labels.json") as f:
             self.meta = CropMeta.from_dict(json.load(f))
         self.class_names = self.meta.class_names
         self.num_classes = self.meta.num_classes
         self.use_mask = use_mask
-        self.transforms = transforms
+        self.augmentations = augmentations
 
     def __len__(self):
         return len(self.meta.crops)
@@ -136,19 +116,21 @@ class SegmentorCropDataset(Dataset):
         img = Image.open(self.root / record.file).convert("RGB")
         label = record.label
 
-        if self.transforms:
-            img = self.transforms(img)
-        else:
-            img = T.ToTensor()(img)
+        img_tensor = T.ToTensor()(img)
 
+        mask_tensor = None
         if self.use_mask and record.mask_file is not None:
             mask_pil = Image.open(self.root / record.mask_file).convert("L")
             mask_tensor = T.ToTensor()(mask_pil)
-            img = torch.cat([img, mask_tensor], dim=0)
         elif self.use_mask:
-            img = torch.cat([img, torch.ones(1, img.shape[1], img.shape[2])], dim=0)
+            mask_tensor = torch.ones(1, img_tensor.shape[1], img_tensor.shape[2])
 
-        return img, label
+        crop = normalize_tensor(img_tensor, mask_tensor=mask_tensor)
+
+        if self.augmentations:
+            crop = self.augmentations(crop)
+
+        return crop, label
 
     def get_class_weights(self) -> torch.Tensor:
         counts = Counter(c.label for c in self.meta.crops)
@@ -174,20 +156,19 @@ def get_crop_dataloader(model_name: str, split: Split) -> DataLoader:
     val_cfg = cfg.validate_cfg(model_name)
     batch_size = train_cfg.batch_size if split == Split.TRAIN else val_cfg.batch_size
 
+    augmentations = None
     if split == Split.TRAIN:
         if augment_mode == AugmentMode.COLOR:
-            transforms = _get_color_augmentations(crop_size)
+            augmentations = _get_color_augmentations()
         else:
-            transforms = _get_type_augmentations(crop_size)
-    else:
-        transforms = _get_val_transforms(crop_size)
+            augmentations = _get_type_augmentations()
 
     segmentor_crops_dir = Path(dataset_root) / "segmentor_crops" / split
     if (segmentor_crops_dir / "labels.json").exists():
         logger.info("Using segmentor crops from %s", segmentor_crops_dir)
-        dataset = SegmentorCropDataset(str(segmentor_crops_dir), use_mask, transforms)
+        dataset = SegmentorCropDataset(str(segmentor_crops_dir), use_mask, augmentations)
     else:
-        dataset = CropDataset(dataset_root, split, crop_size, padding, use_mask, transforms)
+        dataset = CropDataset(dataset_root, split, crop_size, padding, use_mask, augmentations)
 
     sampler = None
     shuffle = False

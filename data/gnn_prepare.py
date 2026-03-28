@@ -10,6 +10,7 @@ from torchvision.ops import box_iou
 from tqdm import tqdm
 
 from common.config import cfg
+from common.preprocessing import crop_and_normalize
 from common.types import Split
 from data.gnn_dataset import build_graph
 from models import create_model
@@ -20,25 +21,8 @@ SCORE_THRESHOLD = 0.1
 IOU_THRESHOLD = 0.3
 
 
-def _crop_and_classify(classifier, img_tensor, box, crop_size, padding, device, use_mask=False, mask=None):
-    _, h, w = img_tensor.shape
-    x1, y1, x2, y2 = box.int().tolist()
-    x1 = max(0, x1 - padding)
-    y1 = max(0, y1 - padding)
-    x2 = min(w, x2 + padding)
-    y2 = min(h, y2 + padding)
-
-    crop = img_tensor[:, y1:y2, x1:x2]
-    crop = T.Resize((crop_size, crop_size))(crop)
-
-    if use_mask and mask is not None:
-        mask_crop = mask[y1:y2, x1:x2].to(cfg.torch.device).unsqueeze(0).float()
-        mask_crop = T.Resize((crop_size, crop_size))(mask_crop)
-        crop = torch.cat([crop, mask_crop], dim=0)
-    elif use_mask:
-        mask_crop = torch.ones(1, crop_size, crop_size).to(cfg.torch.device)
-        crop = torch.cat([crop, mask_crop], dim=0)
-
+def _crop_and_classify(classifier, img_tensor, box, crop_size, padding, device, mask=None):
+    crop = crop_and_normalize(img_tensor, box, crop_size, padding, mask=mask)
     logits = classifier(crop.unsqueeze(0).to(device))
     return logits.squeeze(0).cpu()
 
@@ -148,7 +132,10 @@ def prepare_gnn_data(gnn_model_name: str):
                 final_boxes.append(gt_boxes_t[gt_i])
                 final_scores.append(0.5)
                 final_labels.append(gt_labels[gt_i])
-                final_masks.append(None)
+                gt_box = gt_boxes_t[gt_i].int()
+                bh = max(1, (gt_box[3] - gt_box[1]).item())
+                bw = max(1, (gt_box[2] - gt_box[0]).item())
+                final_masks.append(torch.ones(ih, iw))
 
             if len(final_boxes) < 2:
                 continue
@@ -164,7 +151,7 @@ def prepare_gnn_data(gnn_model_name: str):
                     logits = _crop_and_classify(
                         classifier, img_tensor, boxes_t[i],
                         crop_size, padding, device,
-                        use_mask=use_mask, mask=mask_for_crop,
+                        mask=mask_for_crop,
                     )
                     color_logits_list.append(logits)
 
