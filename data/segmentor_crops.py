@@ -152,10 +152,10 @@ def prepare_segmentor_crops(classifier_model_name: str):
                     box = pred_boxes[pred_i]
                     label = gt_labels[best_gt]
                     x1, y1, x2, y2 = box.int().tolist()
-                    x1 = max(0, x1 - padding)
-                    y1 = max(0, y1 - padding)
-                    x2 = min(iw, x2 + padding)
-                    y2 = min(ih, y2 + padding)
+                    x1 = max(0, x1)
+                    y1 = max(0, y1)
+                    x2 = min(iw, x2)
+                    y2 = min(ih, y2)
 
                     mask_np = (pred_masks[pred_i, 0] > 0.5).numpy().astype(np.uint8)
 
@@ -181,10 +181,10 @@ def prepare_segmentor_crops(classifier_model_name: str):
                 gt_mask = gt_masks[gt_i]
 
                 jittered = _jitter_box(gt_box, iw, ih)
-                x1 = max(0, jittered[0] - padding)
-                y1 = max(0, jittered[1] - padding)
-                x2 = min(iw, jittered[2] + padding)
-                y2 = min(ih, jittered[3] + padding)
+                x1 = max(0, jittered[0])
+                y1 = max(0, jittered[1])
+                x2 = min(iw, jittered[2])
+                y2 = min(ih, jittered[3])
 
                 crop_name, mask_name = _save_crop_and_mask(
                     img, gt_mask, x1, y1, x2, y2, crop_size, crop_idx, out_split,

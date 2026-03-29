@@ -92,7 +92,7 @@ class CropDataset(Dataset):
                 mask = torch.ones(ih, iw, dtype=torch.float32)
 
         img_tensor = T.ToTensor()(img)
-        crop = crop_and_normalize(img_tensor, box, self.crop_size, self.padding, mask=mask)
+        crop = crop_and_normalize(img_tensor, box, self.crop_size, padding=0, mask=mask)
 
         crop = _apply_augmentations(crop, self.augmentations)
 

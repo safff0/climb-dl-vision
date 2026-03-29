@@ -21,8 +21,8 @@ SCORE_THRESHOLD = 0.1
 IOU_THRESHOLD = 0.3
 
 
-def _crop_and_classify(classifier, img_tensor, box, crop_size, padding, device, mask=None):
-    crop = crop_and_normalize(img_tensor, box, crop_size, padding, mask=mask)
+def _crop_and_classify(classifier, img_tensor, box, crop_size, device, mask=None):
+    crop = crop_and_normalize(img_tensor, box, crop_size, padding=0, mask=mask)
     logits = classifier(crop.unsqueeze(0).to(device))
     return logits.squeeze(0).cpu()
 
@@ -150,7 +150,7 @@ def prepare_gnn_data(gnn_model_name: str):
                     mask_for_crop = final_masks[i] if use_mask else None
                     logits = _crop_and_classify(
                         classifier, img_tensor, boxes_t[i],
-                        crop_size, padding, device,
+                        crop_size, device,
                         mask=mask_for_crop,
                     )
                     color_logits_list.append(logits)

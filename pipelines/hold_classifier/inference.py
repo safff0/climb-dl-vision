@@ -49,8 +49,8 @@ def _class_aware_nms(boxes, scores, labels, masks, iou_threshold=0.5):
     return boxes[keep], scores[keep], labels[keep], masks[keep]
 
 
-def _classify_crop(classifier, img_tensor, box, crop_size, padding, class_names, device, mask=None):
-    crop = crop_and_normalize(img_tensor, box, crop_size, padding, mask=mask)
+def _classify_crop(classifier, img_tensor, box, crop_size, class_names, device, mask=None):
+    crop = crop_and_normalize(img_tensor, box, crop_size, padding=0, mask=mask)
     logits = classifier(crop.unsqueeze(0).to(device))
     probs = F.softmax(logits, dim=1).squeeze(0).cpu()
     pred_idx = probs.argmax().item()
@@ -160,7 +160,7 @@ def run_full_inference(
                         color_mask = det_mask if color_use_mask else None
                         det.color, det.color_probs = _classify_crop(
                             color_classifier, img_tensor, boxes[i],
-                            color_crop_size, color_padding, color_names, device,
+                            color_crop_size, color_names, device,
                             mask=color_mask,
                         )
 
@@ -168,7 +168,7 @@ def run_full_inference(
                         type_mask = det_mask if type_use_mask else None
                         det.hold_type, det.type_probs = _classify_crop(
                             type_classifier, img_tensor, boxes[i],
-                            type_crop_size, type_padding, type_names, device,
+                            type_crop_size, type_names, device,
                             mask=type_mask,
                         )
 
