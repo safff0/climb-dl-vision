@@ -47,6 +47,7 @@ models:
     crop_size: 224
     crop_padding: 16
     use_mask_channel: true
+    use_segmentor_mask: true
     augment_mode: color
     segmentor_model: mask_rcnn_hold
     segmentor_weights: "weights/hold_v2.pt"
