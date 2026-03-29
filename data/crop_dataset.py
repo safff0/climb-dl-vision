@@ -84,7 +84,12 @@ class CropDataset(Dataset):
 
         mask = None
         if self.use_mask:
-            mask = torch.as_tensor(self.coco.annToMask(ann), dtype=torch.float32)
+            seg = ann.get("segmentation", [])
+            if seg and not (isinstance(seg, list) and len(seg) == 0):
+                mask = torch.as_tensor(self.coco.annToMask(ann), dtype=torch.float32)
+            else:
+                iw, ih = img.size
+                mask = torch.ones(ih, iw, dtype=torch.float32)
 
         img_tensor = T.ToTensor()(img)
         crop = crop_and_normalize(img_tensor, box, self.crop_size, self.padding, mask=mask)

@@ -116,7 +116,11 @@ def prepare_segmentor_crops(classifier_model_name: str):
                     continue
                 gt_boxes.append([x, y, x + w, y + h])
                 gt_labels.append(cat_idx)
-                gt_masks.append(coco.annToMask(ann))
+                seg = ann.get("segmentation", [])
+                if seg and not (isinstance(seg, list) and len(seg) == 0):
+                    gt_masks.append(coco.annToMask(ann))
+                else:
+                    gt_masks.append(np.ones((ih, iw), dtype=np.uint8))
 
             if not gt_boxes:
                 continue
