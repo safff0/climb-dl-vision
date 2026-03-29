@@ -1,5 +1,6 @@
 import torch
 from torchvision import transforms as T
+from common.config import cfg
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -26,7 +27,7 @@ def crop_and_normalize(
     crop = _normalize(crop)
 
     if mask is not None:
-        mask_crop = mask[y1:y2, x1:x2].unsqueeze(0).float()
+        mask_crop = mask[y1:y2, x1:x2].unsqueeze(0).to(cfg.torch.device).float()
         mask_crop = T.Resize((crop_size, crop_size), antialias=True)(mask_crop)
         crop = torch.cat([crop, mask_crop], dim=0)
 
