@@ -170,11 +170,14 @@ def get_crop_dataloader(model_name: str, split: Split) -> DataLoader:
         else:
             augmentations = _get_type_augmentations()
 
+    use_segmentor_mask = mcfg.get("use_segmentor_mask", False)
     segmentor_crops_dir = Path(dataset_root) / "segmentor_crops" / split
-    if (segmentor_crops_dir / "labels.json").exists():
+    if use_segmentor_mask and (segmentor_crops_dir / "labels.json").exists():
         logger.info("Using segmentor crops from %s", segmentor_crops_dir)
         dataset = SegmentorCropDataset(str(segmentor_crops_dir), use_mask, augmentations)
     else:
+        if use_segmentor_mask:
+            logger.warning("use_segmentor_mask=true but no crops at %s, falling back to GT", segmentor_crops_dir)
         dataset = CropDataset(dataset_root, split, crop_size, padding, use_mask, augmentations)
 
     sampler = None
