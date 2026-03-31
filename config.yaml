@@ -40,11 +40,12 @@ models:
     validate:
       batch_size: 1
 
-  hold_color_handcrafted:
+  hold_color_catboost:
     pipeline: color_handcrafted
     dataset: "datasets/hold_color"
     hue_bins: 8
     dominant_colors: 3
+    erode_pixels: 3
     color_normalization: shades_of_gray
     train:
       batch_size: 1

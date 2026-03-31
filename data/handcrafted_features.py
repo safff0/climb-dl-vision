@@ -15,15 +15,31 @@ from common.types import Split
 
 logger = logging.getLogger(__name__)
 
+SAT_THRESHOLD = 30
+VAL_THRESHOLD = 40
+
+
+def _quantile_features(vals: np.ndarray) -> list[float]:
+    q25 = np.percentile(vals, 25)
+    q75 = np.percentile(vals, 75)
+    return [q25, q75, q75 - q25]
+
 
 def extract_color_features(
     crop_np: np.ndarray,
     mask_np: np.ndarray = None,
     hue_bins: int = 8,
     dominant_colors: int = 3,
+    erode_pixels: int = 3,
 ) -> np.ndarray:
     if mask_np is None:
         mask_np = np.ones(crop_np.shape[:2], dtype=np.uint8)
+
+    if erode_pixels > 0 and mask_np.sum() > 0:
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (erode_pixels * 2 + 1, erode_pixels * 2 + 1))
+        eroded = cv2.erode(mask_np, kernel, iterations=1)
+        if eroded.sum() > 10:
+            mask_np = eroded
 
     mask_bool = mask_np > 0
     if mask_bool.sum() < 10:
@@ -40,26 +56,41 @@ def extract_color_features(
     b_vals = masked_lab[:, 2]
     features = [
         l_vals.mean(), l_vals.std(), np.median(l_vals),
-        a_vals.mean(), a_vals.std(), np.median(a_vals),
-        b_vals.mean(), b_vals.std(), np.median(b_vals),
     ]
-
-    hue = masked_hsv[:, 0]
-    hist, _ = np.histogram(hue, bins=hue_bins, range=(0, 180), density=True)
-    features.extend(hist.tolist())
+    features.extend([a_vals.mean(), a_vals.std(), np.median(a_vals)])
+    features.extend(_quantile_features(a_vals))
+    features.extend([b_vals.mean(), b_vals.std(), np.median(b_vals)])
+    features.extend(_quantile_features(b_vals))
 
     sat = masked_hsv[:, 1]
     val = masked_hsv[:, 2]
-    features.extend([sat.mean(), sat.std(), val.mean(), val.std()])
+    saturated_mask = (sat > SAT_THRESHOLD) & (val > VAL_THRESHOLD)
+    saturated_fraction = saturated_mask.sum() / max(len(sat), 1)
+    features.append(saturated_fraction)
 
-    if len(masked_lab) >= dominant_colors:
+    if saturated_mask.sum() > 5:
+        hue_saturated = masked_hsv[saturated_mask, 0]
+    else:
+        hue_saturated = masked_hsv[:, 0]
+    hist, _ = np.histogram(hue_saturated, bins=hue_bins, range=(0, 180), density=True)
+    features.extend(hist.tolist())
+
+    features.extend([sat.mean(), sat.std()])
+    features.extend(_quantile_features(sat))
+    features.extend([val.mean(), val.std()])
+    features.extend(_quantile_features(val))
+
+    ab_vals = masked_lab[:, 1:3]
+    if len(ab_vals) >= dominant_colors:
         km = KMeans(n_clusters=dominant_colors, random_state=42, n_init=3, max_iter=50)
-        km.fit(masked_lab)
+        km.fit(ab_vals)
         centers = km.cluster_centers_
         counts = Counter(km.labels_)
+        total_pixels = len(ab_vals)
         sorted_clusters = sorted(range(dominant_colors), key=lambda i: -counts.get(i, 0))
         for ci in sorted_clusters:
             features.extend(centers[ci].tolist())
+            features.append(counts.get(ci, 0) / total_pixels)
     else:
         features.extend([0.0] * dominant_colors * 3)
 
@@ -74,6 +105,7 @@ def extract_features_from_dataset(
     dataset_root = mcfg["dataset"]
     hue_bins = mcfg.get("hue_bins", 8)
     dominant_colors = mcfg.get("dominant_colors", 3)
+    erode_pixels = mcfg.get("erode_pixels", 3)
     color_norm = mcfg.get("color_normalization", "none")
 
     split_dir = Path(dataset_root) / split
@@ -114,7 +146,7 @@ def extract_features_from_dataset(
             full_mask = coco.annToMask(ann)
             mask_crop = full_mask[y1:y2, x1:x2]
 
-        features = extract_color_features(crop, mask_crop, hue_bins, dominant_colors)
+        features = extract_color_features(crop, mask_crop, hue_bins, dominant_colors, erode_pixels)
         all_features.append(features)
         all_labels.append(cat_idx)
 

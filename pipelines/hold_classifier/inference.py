@@ -119,7 +119,7 @@ def run_full_inference(
     hc_config = {}
     if handcrafted_color_weights:
         hc_model = HandcraftedColorClassifier.load(handcrafted_color_weights)
-        hc_config = cfg.model_cfg("hold_color_handcrafted")
+        hc_config = cfg.model_cfg("hold_color_catboost")
         hc_color_norm = hc_config.get("color_normalization", "none")
 
     seg_dataset_root = seg_mcfg["dataset"]
@@ -203,6 +203,7 @@ def run_full_inference(
                             hc_img, hc_mask,
                             hc_config.get("hue_bins", 8),
                             hc_config.get("dominant_colors", 3),
+                            hc_config.get("erode_pixels", 3),
                         )
                         hc_proba = hc_model.predict_proba(hc_feats.reshape(1, -1))[0]
                         hc_pred = int(hc_proba.argmax())
