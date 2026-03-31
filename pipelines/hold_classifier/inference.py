@@ -18,6 +18,8 @@ from common.preprocessing import crop_and_normalize
 from common.types import Detection, ImagePredictions, PipelineMode, SegClass
 from data.crop_dataset import get_dataset_info
 from data.gnn_dataset import build_graph
+from data.handcrafted_features import extract_color_features
+from models.color_handcrafted import HandcraftedColorClassifier
 from models import create_model
 from pipelines import register_pipeline
 from pipelines.hold_classifier.postprocess import cluster_colors
@@ -66,6 +68,7 @@ def run_full_inference(
     color_weights: str = None,
     type_weights: str = None,
     gnn_weights: str = None,
+    handcrafted_color_weights: str = None,
     preview: bool = False,
 ):
     device = torch.device(cfg.torch.device)
@@ -110,6 +113,14 @@ def run_full_inference(
         gnn_mcfg = cfg.model_cfg("color_gnn")
         gnn_k = gnn_mcfg.get("k_neighbors", 6)
         gnn_model = _load_model("color_gnn", gnn_weights, device)
+
+    hc_model = None
+    hc_color_norm = "none"
+    hc_config = {}
+    if handcrafted_color_weights:
+        hc_model = HandcraftedColorClassifier.load(handcrafted_color_weights)
+        hc_config = cfg.model_cfg("hold_color_handcrafted")
+        hc_color_norm = hc_config.get("color_normalization", "none")
 
     seg_dataset_root = seg_mcfg["dataset"]
     seg_ann_path = Path(seg_dataset_root) / "train" / "_annotations.coco.json"
@@ -179,6 +190,27 @@ def run_full_inference(
                             type_crop_size, type_names, device,
                             mask=type_mask,
                         )
+
+                    if hc_model is not None:
+                        box_i = boxes[i].int().tolist()
+                        x1c, y1c = max(0, box_i[0]), max(0, box_i[1])
+                        x2c, y2c = min(iw, box_i[2]), min(ih, box_i[3])
+                        hc_img = np.array(img)[y1c:y2c, x1c:x2c]
+                        if hc_color_norm != "none":
+                            hc_img = apply_color_normalization(hc_img, hc_color_norm)
+                        hc_mask = det_mask[y1c:y2c, x1c:x2c].cpu().numpy().astype(np.uint8)
+                        hc_feats = extract_color_features(
+                            hc_img, hc_mask,
+                            hc_config.get("hue_bins", 8),
+                            hc_config.get("dominant_colors", 3),
+                        )
+                        hc_proba = hc_model.predict_proba(hc_feats.reshape(1, -1))[0]
+                        hc_pred = int(hc_proba.argmax())
+                        det.color = hc_model.class_names[hc_pred]
+                        det.color_probs = {
+                            name: round(float(hc_proba[ci]), 4)
+                            for ci, name in enumerate(hc_model.class_names)
+                        }
 
                 detections.append(det)
 
