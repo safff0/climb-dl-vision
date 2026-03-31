@@ -30,7 +30,7 @@ class FocalLoss(nn.Module):
 
 def _freeze_backbone(model):
     for name, param in model.named_parameters():
-        if "classifier" not in name:
+        if "classifier" not in name and "fc" not in name:
             param.requires_grad = False
 
 
