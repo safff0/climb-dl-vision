@@ -10,6 +10,8 @@ from pycocotools.coco import COCO
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import transforms as T
 
+from common.augmentations import RandomGamma, RandomWhiteBalanceShift
+from common.color_normalization import apply_color_normalization
 from common.config import cfg
 from common.preprocessing import crop_and_normalize, normalize_tensor
 from common.types import AugmentMode, CropMeta, DatasetInfo, Split
@@ -38,19 +40,24 @@ def _get_color_augmentations():
     return T.Compose([
         T.RandomHorizontalFlip(),
         T.RandomVerticalFlip(),
-        T.ColorJitter(brightness=0.15, contrast=0.15, saturation=0, hue=0),
+        T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0, hue=0),
+        RandomGamma(gamma_range=(0.7, 1.5)),
+        RandomWhiteBalanceShift(strength=0.1),
+        T.GaussianBlur(kernel_size=3, sigma=(0.1, 0.5)),
     ])
 
 
 class CropDataset(Dataset):
     def __init__(self, root: str, split: Split, crop_size: int = 128,
-                 padding: int = 16, use_mask: bool = False, augmentations=None):
+                 padding: int = 16, use_mask: bool = False, augmentations=None,
+                 color_norm: str = "none"):
         self.root = Path(root) / split
         self.coco = COCO(str(self.root / "_annotations.coco.json"))
         self.crop_size = crop_size
         self.padding = padding
         self.use_mask = use_mask
         self.augmentations = augmentations
+        self.color_norm = color_norm
 
         categories = self.coco.loadCats(self.coco.getCatIds())
         self.cat_id_to_idx = {}
@@ -77,6 +84,8 @@ class CropDataset(Dataset):
         img_id, ann_id, label = self.samples[idx]
         img_info = self.coco.loadImgs(img_id)[0]
         img = Image.open(self.root / img_info["file_name"]).convert("RGB")
+        if self.color_norm != "none":
+            img = Image.fromarray(apply_color_normalization(np.array(img), self.color_norm))
         ann = self.coco.loadAnns(ann_id)[0]
 
         x, y, w, h = ann["bbox"]
@@ -112,7 +121,8 @@ class CropDataset(Dataset):
 
 
 class SegmentorCropDataset(Dataset):
-    def __init__(self, crops_dir: str, use_mask: bool = False, augmentations=None):
+    def __init__(self, crops_dir: str, use_mask: bool = False, augmentations=None,
+                 color_norm: str = "none"):
         self.root = Path(crops_dir)
         with open(self.root / "labels.json") as f:
             self.meta = CropMeta.from_dict(json.load(f))
@@ -120,6 +130,7 @@ class SegmentorCropDataset(Dataset):
         self.num_classes = self.meta.num_classes
         self.use_mask = use_mask
         self.augmentations = augmentations
+        self.color_norm = color_norm
 
     def __len__(self):
         return len(self.meta.crops)
@@ -127,6 +138,8 @@ class SegmentorCropDataset(Dataset):
     def __getitem__(self, idx):
         record = self.meta.crops[idx]
         img = Image.open(self.root / record.file).convert("RGB")
+        if self.color_norm != "none":
+            img = Image.fromarray(apply_color_normalization(np.array(img), self.color_norm))
         label = record.label
 
         img_tensor = T.ToTensor()(img)
@@ -175,15 +188,16 @@ def get_crop_dataloader(model_name: str, split: Split) -> DataLoader:
         else:
             augmentations = _get_type_augmentations()
 
+    color_norm = mcfg.get("color_normalization", "none")
     use_segmentor_mask = mcfg.get("use_segmentor_mask", False)
     segmentor_crops_dir = Path(dataset_root) / "segmentor_crops" / split
     if use_segmentor_mask and (segmentor_crops_dir / "labels.json").exists():
         logger.info("Using segmentor crops from %s", segmentor_crops_dir)
-        dataset = SegmentorCropDataset(str(segmentor_crops_dir), use_mask, augmentations)
+        dataset = SegmentorCropDataset(str(segmentor_crops_dir), use_mask, augmentations, color_norm)
     else:
         if use_segmentor_mask:
             logger.warning("use_segmentor_mask=true but no crops at %s, falling back to GT", segmentor_crops_dir)
-        dataset = CropDataset(dataset_root, split, crop_size, padding, use_mask, augmentations)
+        dataset = CropDataset(dataset_root, split, crop_size, padding, use_mask, augmentations, color_norm)
 
     sampler = None
     shuffle = False

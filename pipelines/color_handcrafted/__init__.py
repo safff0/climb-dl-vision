@@ -1,0 +1,2 @@
+import pipelines.color_handcrafted.train
+import pipelines.color_handcrafted.validate

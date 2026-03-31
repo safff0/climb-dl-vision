@@ -40,10 +40,25 @@ models:
     validate:
       batch_size: 1
 
+  hold_color_handcrafted:
+    pipeline: color_handcrafted
+    dataset: "datasets/hold_color"
+    hue_bins: 8
+    dominant_colors: 3
+    color_normalization: shades_of_gray
+    train:
+      batch_size: 1
+      lr: 0.1
+      epochs: 1
+      scheduler: cosine
+    validate:
+      batch_size: 1
+
   hold_color_classifier:
     pipeline: hold_classifier
     dataset: "datasets/hold_color"
     backbone: convnext_tiny
+    color_normalization: shades_of_gray
     crop_size: 224
     crop_padding: 16
     use_mask_channel: true

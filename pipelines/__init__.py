@@ -17,5 +17,6 @@ def get_pipeline(name: str, mode: PipelineMode) -> Callable:
 
 
 import pipelines.color_gnn
+import pipelines.color_handcrafted
 import pipelines.hold_classifier
 import pipelines.mask_rcnn

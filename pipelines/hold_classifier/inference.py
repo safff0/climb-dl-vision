@@ -12,6 +12,7 @@ from torchvision.ops import nms
 from torchvision.utils import draw_bounding_boxes, draw_segmentation_masks
 from tqdm import tqdm
 
+from common.color_normalization import apply_color_normalization
 from common.config import cfg
 from common.preprocessing import crop_and_normalize
 from common.types import Detection, ImagePredictions, PipelineMode, SegClass
@@ -78,12 +79,14 @@ def run_full_inference(
     color_crop_size = 224
     color_padding = 16
     color_use_mask = False
+    color_norm = "none"
     if color_weights:
         color_model_name = "hold_color_classifier"
         color_mcfg = cfg.model_cfg(color_model_name)
         color_crop_size = color_mcfg["crop_size"]
         color_padding = color_mcfg["crop_padding"]
         color_use_mask = color_mcfg.get("use_mask_channel", False)
+        color_norm = color_mcfg.get("color_normalization", "none")
         color_classifier = _load_model(color_model_name, color_weights, device)
         color_names = get_dataset_info(color_model_name).class_names
 
@@ -130,6 +133,11 @@ def run_full_inference(
             iw, ih = img.size
             img_tensor = to_tensor(img).to(device)
 
+            color_img_tensor = img_tensor
+            if color_classifier is not None and color_norm != "none":
+                color_normed = apply_color_normalization(np.array(img), color_norm)
+                color_img_tensor = to_tensor(Image.fromarray(color_normed)).to(device)
+
             seg_pred = segmentor([img_tensor])[0]
             keep = seg_pred["scores"] > SCORE_THRESHOLD
             boxes = seg_pred["boxes"][keep]
@@ -159,7 +167,7 @@ def run_full_inference(
                     if color_classifier is not None:
                         color_mask = det_mask if color_use_mask else None
                         det.color, det.color_probs = _classify_crop(
-                            color_classifier, img_tensor, boxes[i],
+                            color_classifier, color_img_tensor, boxes[i],
                             color_crop_size, color_names, device,
                             mask=color_mask,
                         )

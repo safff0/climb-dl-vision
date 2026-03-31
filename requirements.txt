@@ -10,3 +10,5 @@ tqdm
 gdown
 scikit-learn
 torch-geometric
+catboost
+opencv-python
