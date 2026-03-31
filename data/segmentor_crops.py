@@ -72,6 +72,12 @@ def prepare_segmentor_crops(classifier_model_name: str):
     output_root = Path(dataset_root) / "segmentor_crops"
     random.seed(cfg.torch.seed)
 
+    seg_dataset_root = cfg.model_cfg(segmentor_model)["dataset"]
+    seg_ann_path = Path(seg_dataset_root) / "train" / "_annotations.coco.json"
+    with open(seg_ann_path) as f:
+        seg_cats = json.load(f)["categories"]
+    volume_label_id = next((c["id"] for c in seg_cats if c["name"].lower() == "volume"), -1)
+
     for split in [Split.TRAIN, Split.VALID]:
         split_dir = Path(dataset_root) / split
         ann_path = split_dir / "_annotations.coco.json"
@@ -134,7 +140,8 @@ def prepare_segmentor_crops(classifier_model_name: str):
             pred_boxes = pred["boxes"].cpu()
             pred_scores = pred["scores"].cpu()
             pred_masks = pred["masks"].cpu()
-            keep = pred_scores > SCORE_THRESHOLD
+            pred_labels = pred["labels"].cpu()
+            keep = (pred_scores > SCORE_THRESHOLD) & (pred_labels != volume_label_id)
             pred_boxes = pred_boxes[keep]
             pred_masks = pred_masks[keep]
 
