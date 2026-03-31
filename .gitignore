@@ -211,3 +211,4 @@ __marimo__/
 datasets/*
 results/*
 weights/*
+catboost_info

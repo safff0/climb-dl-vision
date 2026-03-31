@@ -14,8 +14,6 @@ def create_model(name: str, **kwargs) -> nn.Module:
     return MODEL_REGISTRY[name](**kwargs)
 
 
-import models.classifier
 import models.color_gnn
 import models.hold_classifier
 import models.mask_rcnn
-import models.segmenter

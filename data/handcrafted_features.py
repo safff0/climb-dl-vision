@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 from pycocotools.coco import COCO
 from sklearn.cluster import KMeans
+from tqdm import tqdm
 
 from common.color_normalization import apply_color_normalization
 from common.config import cfg
@@ -85,7 +86,7 @@ def extract_features_from_dataset(
     all_features = []
     all_labels = []
 
-    for ann_id, ann in coco.anns.items():
+    for ann_id, ann in tqdm(coco.anns.items(), desc=f"Extracting features [{split.value}]"):
         x, y, w, h = ann["bbox"]
         if w < 1 or h < 1:
             continue

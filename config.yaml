@@ -57,10 +57,10 @@ models:
   hold_color_classifier:
     pipeline: hold_classifier
     dataset: "datasets/hold_color"
-    backbone: convnext_tiny
+    backbone: resnet18
     color_normalization: shades_of_gray
-    crop_size: 224
-    crop_padding: 16
+    crop_size: 128
+    crop_padding: 8
     use_mask_channel: true
     use_segmentor_mask: true
     augment_mode: color
