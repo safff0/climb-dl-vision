@@ -103,10 +103,11 @@ models:
     hidden_dim: 128
     num_layers: 2
     k_neighbors: 6
-    color_model: hold_color_classifier
+    color_model_type: catboost
+    color_model: hold_color_catboost
     segmentor_model: mask_rcnn_hold
     segmentor_weights: "weights/hold_v2.pt"
-    color_weights: "weights/hold_color_v6.pt"
+    color_weights: "weights/color_catboost.cbm"
     route_loss_weight: 0.5
     train:
       batch_size: 8

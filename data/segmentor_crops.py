@@ -18,7 +18,7 @@ from models import create_model
 logger = logging.getLogger(__name__)
 
 IOU_THRESHOLD = 0.3
-SCORE_THRESHOLD = 0.1
+SCORE_THRESHOLD = 0.7
 JITTER_RANGE = 0.15
 
 

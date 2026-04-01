@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
@@ -9,15 +10,18 @@ from torchvision import transforms as T
 from torchvision.ops import box_iou
 from tqdm import tqdm
 
+from common.color_normalization import apply_color_normalization
 from common.config import cfg
 from common.preprocessing import crop_and_normalize
 from common.types import Split
 from data.gnn_dataset import build_graph
+from data.handcrafted_features import extract_color_features
 from models import create_model
+from models.color_handcrafted import HandcraftedColorClassifier
 
 logger = logging.getLogger(__name__)
 
-SCORE_THRESHOLD = 0.1
+SCORE_THRESHOLD = 0.7
 IOU_THRESHOLD = 0.3
 
 
@@ -37,18 +41,34 @@ def prepare_gnn_data(gnn_model_name: str):
     color_weights = mcfg["color_weights"]
     dataset_root = mcfg["dataset"]
 
+    color_model_type = mcfg.get("color_model_type", "cnn")
     color_mcfg = cfg.model_cfg(color_model)
-    crop_size = color_mcfg["crop_size"]
-    padding = color_mcfg["crop_padding"]
-    use_mask = color_mcfg.get("use_mask_channel", False)
 
     segmentor = create_model(segmentor_model).to(device)
     segmentor.load_state_dict(torch.load(segmentor_weights, map_location=device, weights_only=True))
     segmentor.eval()
 
-    classifier = create_model(color_model).to(device)
-    classifier.load_state_dict(torch.load(color_weights, map_location=device, weights_only=True))
-    classifier.eval()
+    cnn_classifier = None
+    hc_classifier = None
+    crop_size = 224
+    use_mask = False
+    hc_color_norm = "none"
+    hc_config = {}
+
+    if color_model_type == "catboost":
+        hc_classifier = HandcraftedColorClassifier.load(color_weights)
+        hc_config = color_mcfg
+        hc_color_norm = color_mcfg.get("color_normalization", "none")
+    else:
+        crop_size = color_mcfg["crop_size"]
+        use_mask = color_mcfg.get("use_mask_channel", False)
+        cnn_classifier = create_model(color_model).to(device)
+        cnn_classifier.load_state_dict(torch.load(color_weights, map_location=device, weights_only=True))
+        cnn_classifier.eval()
+
+    gt_label_map = None
+    if hc_classifier is not None:
+        gt_label_map = hc_classifier.label_map
 
     to_tensor = T.ToTensor()
     out_root = Path(dataset_root)
@@ -142,18 +162,48 @@ def prepare_gnn_data(gnn_model_name: str):
 
             boxes_t = torch.stack(final_boxes)
             scores_t = torch.tensor(final_scores)
+
+            if gt_label_map is not None:
+                mapped = [gt_label_map.get(l, -1) for l in final_labels]
+                valid = [i for i, m in enumerate(mapped) if m >= 0]
+                if len(valid) < 2:
+                    continue
+                boxes_t = boxes_t[valid]
+                scores_t = scores_t[valid]
+                final_labels = [mapped[i] for i in valid]
+                final_masks = [final_masks[i] for i in valid]
+
             labels_t = torch.tensor(final_labels, dtype=torch.long)
 
             color_logits_list = []
-            with torch.no_grad():
+            if hc_classifier is not None:
+                img_np = np.array(img)
+                if hc_color_norm != "none":
+                    img_np = apply_color_normalization(img_np, hc_color_norm)
                 for i in range(len(boxes_t)):
-                    mask_for_crop = final_masks[i] if use_mask else None
-                    logits = _crop_and_classify(
-                        classifier, img_tensor, boxes_t[i],
-                        crop_size, device,
-                        mask=mask_for_crop,
+                    bx = boxes_t[i].int().tolist()
+                    x1c, y1c = max(0, bx[0]), max(0, bx[1])
+                    x2c, y2c = min(iw, bx[2]), min(ih, bx[3])
+                    hc_crop = img_np[y1c:y2c, x1c:x2c]
+                    hc_mask = final_masks[i][y1c:y2c, x1c:x2c].numpy().astype(np.uint8)
+                    feats = extract_color_features(
+                        hc_crop, hc_mask,
+                        hc_config.get("hue_bins", 8),
+                        hc_config.get("dominant_colors", 3),
+                        hc_config.get("erode_pixels", 3),
                     )
-                    color_logits_list.append(logits)
+                    proba = hc_classifier.predict_proba(feats.reshape(1, -1))[0]
+                    color_logits_list.append(torch.tensor(proba, dtype=torch.float32))
+            else:
+                with torch.no_grad():
+                    for i in range(len(boxes_t)):
+                        mask_for_crop = final_masks[i] if use_mask else None
+                        logits = _crop_and_classify(
+                            cnn_classifier, img_tensor, boxes_t[i],
+                            crop_size, device,
+                            mask=mask_for_crop,
+                        )
+                        color_logits_list.append(logits)
 
             color_logits = torch.stack(color_logits_list)
 

@@ -49,12 +49,18 @@ def _build_color_gnn(model_name: str):
     mcfg = cfg.model_cfg(model_name)
     hidden_dim = mcfg.get("hidden_dim", 128)
     num_layers = mcfg.get("num_layers", 2)
+    color_model_type = mcfg.get("color_model_type", "cnn")
 
-    color_model = mcfg.get("color_model", "hold_color_classifier")
-    info = get_dataset_info(color_model)
-    num_colors = info.num_classes
+    if color_model_type == "catboost":
+        from models.color_handcrafted import HandcraftedColorClassifier
+        hc = HandcraftedColorClassifier.load(mcfg["color_weights"])
+        num_colors = len(hc.class_names)
+    else:
+        color_model = mcfg.get("color_model", "hold_color_classifier")
+        info = get_dataset_info(color_model)
+        num_colors = info.num_classes
+
     in_dim = num_colors + 5
-
     return ColorRouteGNN(in_dim, hidden_dim, num_colors, num_layers)
 
 
