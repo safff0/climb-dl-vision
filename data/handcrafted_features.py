@@ -97,9 +97,14 @@ def extract_color_features(
     return np.array(features, dtype=np.float32)
 
 
+def _cache_path(dataset_root: str, split: Split, model_name: str) -> Path:
+    return Path(dataset_root) / f".features_cache_{model_name}_{split}.npz"
+
+
 def extract_features_from_dataset(
     model_name: str,
     split: Split,
+    force_recompute: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     mcfg = cfg.model_cfg(model_name)
     dataset_root = mcfg["dataset"]
@@ -107,6 +112,12 @@ def extract_features_from_dataset(
     dominant_colors = mcfg.get("dominant_colors", 3)
     erode_pixels = mcfg.get("erode_pixels", 3)
     color_norm = mcfg.get("color_normalization", "none")
+
+    cache = _cache_path(dataset_root, split, model_name)
+    if cache.exists() and not force_recompute:
+        logger.info("Loading cached features from %s", cache)
+        data = np.load(cache, allow_pickle=True)
+        return data["features"], data["labels"], data["class_names"].tolist()
 
     split_dir = Path(dataset_root) / split
     coco = COCO(str(split_dir / "_annotations.coco.json"))
@@ -150,4 +161,13 @@ def extract_features_from_dataset(
         all_features.append(features)
         all_labels.append(cat_idx)
 
-    return np.array(all_features), np.array(all_labels), class_names
+    features_arr = np.array(all_features)
+    labels_arr = np.array(all_labels)
+
+    np.savez(cache,
+             features=features_arr,
+             labels=labels_arr,
+             class_names=np.array(class_names, dtype=object))
+    logger.info("Cached features to %s", cache)
+
+    return features_arr, labels_arr, class_names
