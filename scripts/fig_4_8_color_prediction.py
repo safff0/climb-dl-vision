@@ -98,7 +98,7 @@ def main():
 
         r, c = ax_i // cols, ax_i % cols
         axes[r, c].imshow(masked)
-        axes[r, c].set_title(f"{pred_color} ({conf:.2f})", fontsize=12)
+        axes[r, c].set_title(f"{pred_color} ({conf:.2f})", fontsize=16, fontweight="bold")
         axes[r, c].axis("off")
 
     for ax_i in range(len(hold_indices), rows * cols):

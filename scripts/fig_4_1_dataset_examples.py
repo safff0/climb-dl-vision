@@ -60,7 +60,7 @@ def main():
             img_uint8 = draw_segmentation_masks(img_uint8, mask_tensor, alpha=0.4)
         if boxes:
             box_tensor = torch.tensor(boxes, dtype=torch.float32)
-            img_uint8 = draw_bounding_boxes(img_uint8, box_tensor, labels=labels, width=2, font_size=12)
+            img_uint8 = draw_bounding_boxes(img_uint8, box_tensor, labels=labels, width=4, font_size=18, colors="lime")
 
         axes[ax_idx].imshow(img_uint8.permute(1, 2, 0).numpy())
         axes[ax_idx].axis("off")

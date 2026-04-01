@@ -54,7 +54,7 @@ def main():
 
     vis_all = draw_segmentation_masks(img_uint8.clone(), masks, alpha=0.4)
     label_strs = [f"{seg_cats.get(l.item(), '?')} {s:.2f}" for l, s in zip(labels, scores)]
-    vis_all = draw_bounding_boxes(vis_all, boxes, labels=label_strs, width=2)
+    vis_all = draw_bounding_boxes(vis_all, boxes, labels=label_strs, width=4, font_size=18, colors="lime")
     ax_a.imshow(vis_all.permute(1, 2, 0).numpy())
     ax_a.set_title("(a) All detections")
     ax_a.axis("off")
@@ -62,7 +62,7 @@ def main():
     hold_mask = torch.tensor([l.item() in hold_ids for l in labels])
     if hold_mask.any():
         vis_hold = draw_segmentation_masks(img_uint8.clone(), masks[hold_mask], alpha=0.5)
-        vis_hold = draw_bounding_boxes(vis_hold, boxes[hold_mask], width=2)
+        vis_hold = draw_bounding_boxes(vis_hold, boxes[hold_mask], width=4, colors="lime")
     else:
         vis_hold = img_uint8.clone()
     ax_b.imshow(vis_hold.permute(1, 2, 0).numpy())
@@ -72,7 +72,7 @@ def main():
     vol_mask = torch.tensor([l.item() in volume_ids for l in labels])
     if vol_mask.any():
         vis_vol = draw_segmentation_masks(img_uint8.clone(), masks[vol_mask], alpha=0.5)
-        vis_vol = draw_bounding_boxes(vis_vol, boxes[vol_mask], width=2)
+        vis_vol = draw_bounding_boxes(vis_vol, boxes[vol_mask], width=4, colors="cyan")
     else:
         vis_vol = img_uint8.clone()
     ax_c.imshow(vis_vol.permute(1, 2, 0).numpy())

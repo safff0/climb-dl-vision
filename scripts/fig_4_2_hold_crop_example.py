@@ -45,7 +45,7 @@ def main():
 
         img_with_box = img.copy()
         draw = ImageDraw.Draw(img_with_box)
-        draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
+        draw.rectangle([x1, y1, x2, y2], outline="lime", width=5)
 
         crop = img.crop((x1, y1, x2, y2))
         label = categories.get(ann["category_id"], "unknown")
@@ -56,7 +56,7 @@ def main():
             axes[i, 0].set_title("Wall image")
 
         axes[i, 1].imshow(np.array(crop))
-        axes[i, 1].set_title(f"Color: {label}", fontsize=12)
+        axes[i, 1].set_title(f"Color: {label}", fontsize=16, fontweight="bold")
         axes[i, 1].axis("off")
 
     plt.tight_layout()
