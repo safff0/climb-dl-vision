@@ -11,15 +11,18 @@ from pipelines import register_pipeline
 
 logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
+
 
 @register_pipeline("color_handcrafted", PipelineMode.VALIDATE)
 def run_validate(model_name: str, weights: str):
     model = HandcraftedColorClassifier.load(weights)
 
     features, labels, class_names = extract_features_from_dataset(model_name, Split.VALID)
+    mapped_labels = np.array([model.label_map.get(l, -1) for l in labels])
     preds = model.predict(features)
 
-    correct = (preds == labels).sum()
+    correct = (preds == mapped_labels).sum()
     total = len(labels)
     accuracy = correct / max(total, 1)
 
@@ -29,14 +32,14 @@ def run_validate(model_name: str, weights: str):
     logger.info("-" * 55)
 
     stats = defaultdict(lambda: {"tp": 0, "fp": 0, "fn": 0})
-    for p, l in zip(preds, labels):
+    for p, l in zip(preds, mapped_labels):
         if p == l:
             stats[l]["tp"] += 1
         else:
             stats[p]["fp"] += 1
             stats[l]["fn"] += 1
 
-    for i, name in enumerate(class_names):
+    for i, name in enumerate(model.class_names):
         tp = stats[i]["tp"]
         fp = stats[i]["fp"]
         fn = stats[i]["fn"]

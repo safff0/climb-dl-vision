@@ -35,7 +35,9 @@ class HandcraftedColorClassifier:
         self.model.save_model(path, format="cbm")
         metadata_path = path + ".meta.npz"
         np.savez(metadata_path,
-                 class_names=np.array(self.class_names, dtype=object))
+                 class_names=np.array(self.class_names, dtype=object),
+                 label_map_keys=np.array(list(self.label_map.keys())),
+                 label_map_vals=np.array(list(self.label_map.values())))
 
     @classmethod
     def load(cls, path: str) -> "HandcraftedColorClassifier":
@@ -45,4 +47,7 @@ class HandcraftedColorClassifier:
         metadata_path = path + ".meta.npz"
         data = np.load(metadata_path, allow_pickle=True)
         obj.class_names = data["class_names"].tolist()
+        keys = data["label_map_keys"].tolist()
+        vals = data["label_map_vals"].tolist()
+        obj.label_map = dict(zip(keys, vals))
         return obj

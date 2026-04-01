@@ -1,5 +1,7 @@
 import logging
 
+import numpy as np
+
 from common.config import cfg
 from common.types import PipelineMode, Split
 from data.handcrafted_features import extract_features_from_dataset
@@ -22,8 +24,10 @@ def run_train(model_name: str, output: str):
     model = HandcraftedColorClassifier()
     model.fit(train_features, train_labels, class_names)
 
-    train_acc = (model.predict(train_features) == train_labels).mean()
-    val_acc = (model.predict(val_features) == val_labels).mean()
+    mapped_train = np.array([model.label_map.get(l, -1) for l in train_labels])
+    mapped_val = np.array([model.label_map.get(l, -1) for l in val_labels])
+    train_acc = (model.predict(train_features) == mapped_train).mean()
+    val_acc = (model.predict(val_features) == mapped_val).mean()
 
     logger.info("Train accuracy: %.4f", train_acc)
     logger.info("Valid accuracy: %.4f", val_acc)
