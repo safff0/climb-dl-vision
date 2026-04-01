@@ -98,12 +98,14 @@ def run_full_inference(
     type_crop_size = 224
     type_padding = 16
     type_use_mask = False
+    type_norm = "none"
     if type_weights:
         type_model_name = "hold_type_classifier"
         type_mcfg = cfg.model_cfg(type_model_name)
         type_crop_size = type_mcfg["crop_size"]
         type_padding = type_mcfg["crop_padding"]
         type_use_mask = type_mcfg.get("use_mask_channel", False)
+        type_norm = type_mcfg.get("color_normalization", "none")
         type_classifier = _load_model(type_model_name, type_weights, device)
         type_names = get_dataset_info(type_model_name).class_names
 
@@ -142,12 +144,24 @@ def run_full_inference(
         for idx, img_path in tqdm(enumerate(image_paths), total=len(image_paths), desc="Inference"):
             img = Image.open(img_path).convert("RGB")
             iw, ih = img.size
+            img_np = np.array(img)
             img_tensor = to_tensor(img).to(device)
 
             color_img_tensor = img_tensor
             if color_classifier is not None and color_norm != "none":
-                color_normed = apply_color_normalization(np.array(img), color_norm)
-                color_img_tensor = to_tensor(Image.fromarray(color_normed)).to(device)
+                color_img_tensor = to_tensor(
+                    Image.fromarray(apply_color_normalization(img_np, color_norm))
+                ).to(device)
+
+            type_img_tensor = img_tensor
+            if type_classifier is not None and type_norm != "none":
+                type_img_tensor = to_tensor(
+                    Image.fromarray(apply_color_normalization(img_np, type_norm))
+                ).to(device)
+
+            hc_img_np = img_np
+            if hc_model is not None and hc_color_norm != "none":
+                hc_img_np = apply_color_normalization(img_np, hc_color_norm)
 
             seg_pred = segmentor([img_tensor])[0]
             keep = seg_pred["scores"] > SCORE_THRESHOLD
@@ -186,7 +200,7 @@ def run_full_inference(
                     if type_classifier is not None:
                         type_mask = det_mask if type_use_mask else None
                         det.hold_type, det.type_probs = _classify_crop(
-                            type_classifier, img_tensor, boxes[i],
+                            type_classifier, type_img_tensor, boxes[i],
                             type_crop_size, type_names, device,
                             mask=type_mask,
                         )
@@ -195,9 +209,7 @@ def run_full_inference(
                         box_i = boxes[i].int().tolist()
                         x1c, y1c = max(0, box_i[0]), max(0, box_i[1])
                         x2c, y2c = min(iw, box_i[2]), min(ih, box_i[3])
-                        hc_img = np.array(img)[y1c:y2c, x1c:x2c]
-                        if hc_color_norm != "none":
-                            hc_img = apply_color_normalization(hc_img, hc_color_norm)
+                        hc_img = hc_img_np[y1c:y2c, x1c:x2c]
                         hc_mask = det_mask[y1c:y2c, x1c:x2c].cpu().numpy().astype(np.uint8)
                         hc_feats = extract_color_features(
                             hc_img, hc_mask,
