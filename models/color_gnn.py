@@ -25,6 +25,7 @@ class EdgeMLP(nn.Module):
 class ColorRouteGNN(nn.Module):
     def __init__(self, in_dim: int, hidden_dim: int, num_colors: int, num_layers: int = 2):
         super().__init__()
+        self.num_colors = num_colors
         self.convs = nn.ModuleList()
         self.convs.append(GATConv(in_dim, hidden_dim, heads=4, concat=False))
         for _ in range(num_layers - 1):
@@ -35,11 +36,13 @@ class ColorRouteGNN(nn.Module):
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
+        input_color_probs = x[:, :self.num_colors]
+
         for conv in self.convs:
             x = conv(x, edge_index)
             x = torch.relu(x)
 
-        color_logits = self.color_head(x)
+        color_logits = self.color_head(x) + input_color_probs
         route_logits = self.route_head(x, edge_index)
 
         return color_logits, route_logits
