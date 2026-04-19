@@ -12,3 +12,7 @@ scikit-learn
 torch-geometric
 catboost
 opencv-python
+transformers
+timm
+safetensors
+albumentations

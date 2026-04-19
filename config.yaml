@@ -15,6 +15,12 @@ datasets:
     val_split: 0.15
   color_gnn:
     dir: "datasets/color_gnn"
+  seg_merged:
+    dir: "datasets/seg_merged"
+    val_split: 0.1
+  color_crops:
+    dir: "datasets/color_crops"
+    val_split: 0.1
 
 models:
   mask_rcnn_hold:
@@ -116,3 +122,71 @@ models:
       scheduler: cosine
     validate:
       batch_size: 8
+
+  mask2former_hold:
+    pipeline: mask2former
+    dataset: "datasets/seg_merged"
+    num_classes: 2
+    id2label:
+      0: hold
+      1: volume
+    model_name_or_path: "facebook/mask2former-swin-large-coco-instance"
+    image_size: 1024
+    detector_image_size: 1536
+    score_thr: 0.3
+    mask_threshold: 0.5
+    overlap_mask_area_threshold: 0.8
+    max_detections: 500
+    tile_if_over: 2048
+    tile_batch: 4
+    use_tta: false
+    amp_dtype: bf16
+    gradient_checkpointing: true
+    channels_last: true
+    ema_decay: 0.9998
+    backbone_multiplier: 0.1
+    no_decay_on_norm_bias: true
+    weight_decay: 0.05
+    warmup_steps: 1000
+    min_lr_factor: 0.01
+    grad_clip: 1.0
+    grad_accum: 2
+    val_every_epochs: 2
+    train:
+      batch_size: 4
+      lr: 0.0001
+      epochs: 40
+      scheduler: cosine
+    validate:
+      batch_size: 1
+
+  eva02_color:
+    pipeline: eva02_color
+    dataset: "datasets/color_crops"
+    backbone: "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k"
+    num_classes: 10
+    class_names:
+      - Black
+      - Blue
+      - Gray
+      - Green
+      - Orange
+      - Pink
+      - Purple
+      - Red
+      - White
+      - Yellow
+    image_size: 448
+    amp_dtype: bf16
+    grad_accum: 2
+    weight_decay: 0.05
+    warmup_epochs: 3
+    label_smoothing: 0.05
+    ema_decay: 0.9998
+    train:
+      batch_size: 64
+      lr: 0.0003
+      epochs: 40
+      scheduler: cosine
+    validate:
+      batch_size: 64

@@ -7,6 +7,7 @@ from data.gnn_prepare import prepare_gnn_data
 from data.prepare import create_dataset
 from data.segmentor_crops import prepare_segmentor_crops
 from pipelines import get_pipeline
+from pipelines.climb.inference import run_climb_inference
 from pipelines.hold_classifier.inference import run_full_inference
 
 setup_logging()
@@ -65,6 +66,30 @@ def full_inference(segmentor_weights, color_weights, type_weights, gnn_weights, 
         type_weights=type_weights,
         gnn_weights=gnn_weights,
         handcrafted_color_weights=handcrafted_color_weights,
+        preview=preview,
+    )
+
+
+@cli.command("climb-inference")
+@click.option("--maskformer-dir", "-m", required=True)
+@click.option("--color-weights", "-c", default=None)
+@click.option("--image-dir", "-d", required=True)
+@click.option("--output", "-o", default="results/")
+@click.option("--color-model", default="eva02_color")
+@click.option("--use-sam/--no-sam", default=False)
+@click.option("--sam-model", default="facebook/sam2.1-hiera-large")
+@click.option("--tta/--no-tta", default=False)
+@click.option("--preview", is_flag=True, default=False)
+def climb_inference(maskformer_dir, color_weights, image_dir, output, color_model, use_sam, sam_model, tta, preview):
+    run_climb_inference(
+        maskformer_dir=maskformer_dir,
+        image_dir=image_dir,
+        output=output,
+        color_weights=color_weights,
+        color_model_config=color_model,
+        use_sam_refine=use_sam,
+        sam_model=sam_model,
+        use_tta=tta,
         preview=preview,
     )
 
