@@ -12,6 +12,7 @@ from tqdm import tqdm
 from common.config import cfg
 from common.tiling import iter_tiles, merge_instances_by_mask_iou
 from common.tta import classifier_tta_rot_flip, detector_tta_hflip_scales
+from data.crop_dataset import get_dataset_info
 from pipelines.mask2former.inference import Mask2FormerDetector
 
 logger = logging.getLogger(__name__)
@@ -395,7 +396,6 @@ def run_climb_inference(
     use_sam_refine: bool = False,
     sam_model: str = "facebook/sam2.1-hiera-large",
     use_tta: bool = False,
-    preview: bool = False,
 ):
     device = cfg.torch.device
     _default_backbone = "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k"
@@ -413,7 +413,6 @@ def run_climb_inference(
     type_model_name = _default_backbone
     type_image_size = 448
     if type_weights is not None:
-        from data.crop_dataset import get_dataset_info
         tcfg = cfg.model_cfg(type_model_config)
         type_model_name = tcfg.get("backbone", type_model_name)
         type_image_size = tcfg.get("image_size", type_image_size)
@@ -452,31 +451,30 @@ def run_climb_inference(
             for r in results
         ]
 
-        if preview:
-            overlay = img.copy()
-            for r in results:
-                rle = dict(r["mask_rle"])
-                rle["counts"] = rle["counts"].encode("ascii")
-                m = cocomask.decode(rle).astype(bool)
-                overlay[m] = (overlay[m] * 0.5 + np.array([255, 0, 0]) * 0.5).astype(np.uint8)
-                x0, y0, x1, y1 = [int(v) for v in r["bbox"]]
+        overlay = img.copy()
+        for r in results:
+            rle = dict(r["mask_rle"])
+            rle["counts"] = rle["counts"].encode("ascii")
+            m = cocomask.decode(rle).astype(bool)
+            overlay[m] = (overlay[m] * 0.5 + np.array([255, 0, 0]) * 0.5).astype(np.uint8)
+            x0, y0, x1, y1 = [int(v) for v in r["bbox"]]
 
-                color_name = r.get("color")
-                box_bgr = _COLOR_BGR.get(color_name, (0, 255, 0))
-                cv2.rectangle(overlay, (x0, y0), (x1, y1), box_bgr, 3)
+            color_name = r.get("color")
+            box_bgr = _COLOR_BGR.get(color_name, (0, 255, 0))
+            cv2.rectangle(overlay, (x0, y0), (x1, y1), box_bgr, 3)
 
-                hold_type = r.get("hold_type")
-                seg_label = r.get("class_name", "")
-                type_label = hold_type if (hold_type and hold_type not in ("UNKNOWN", None)) else seg_label
-                label_parts = [p for p in [type_label, color_name] if p and p != "UNKNOWN"]
-                label = " | ".join(label_parts)
+            hold_type = r.get("hold_type")
+            seg_label = r.get("class_name", "")
+            type_label = hold_type if (hold_type and hold_type not in ("UNKNOWN", None)) else seg_label
+            label_parts = [p for p in [type_label, color_name] if p and p != "UNKNOWN"]
+            label = " | ".join(label_parts)
 
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = 0.8
-                pos = (x0, max(22, y0 - 6))
-                cv2.putText(overlay, label, pos, font, font_scale, (255, 255, 255), 4, cv2.LINE_AA)
-                cv2.putText(overlay, label, pos, font, font_scale, (0, 0, 0), 2, cv2.LINE_AA)
-            Image.fromarray(overlay).save(out_dir / img_path.name)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.8
+            pos = (x0, max(22, y0 - 6))
+            cv2.putText(overlay, label, pos, font, font_scale, (255, 255, 255), 4, cv2.LINE_AA)
+            cv2.putText(overlay, label, pos, font, font_scale, (0, 0, 0), 2, cv2.LINE_AA)
+        Image.fromarray(overlay).save(out_dir / img_path.name)
 
     with open(out_dir / "predictions.json", "w") as f:
         json.dump(all_results, f, indent=2)
