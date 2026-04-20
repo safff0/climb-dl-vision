@@ -19,6 +19,19 @@ logger = logging.getLogger(__name__)
 IMNET_MEAN = (0.485, 0.456, 0.406)
 IMNET_STD = (0.229, 0.224, 0.225)
 
+_COLOR_BGR: dict[str, tuple[int, int, int]] = {
+    "Black":  (40,  40,  40),
+    "Blue":   (220, 80,  0),
+    "Gray":   (160, 160, 160),
+    "Green":  (0,   200, 0),
+    "Orange": (0,   140, 255),
+    "Pink":   (180, 105, 255),
+    "Purple": (200, 0,   200),
+    "Red":    (0,   0,   220),
+    "White":  (230, 230, 230),
+    "Yellow": (0,   230, 230),
+}
+
 
 def _read_rgb(path: Path) -> np.ndarray:
     img_bgr = cv2.imread(str(path), cv2.IMREAD_COLOR)
@@ -447,10 +460,22 @@ def run_climb_inference(
                 m = cocomask.decode(rle).astype(bool)
                 overlay[m] = (overlay[m] * 0.5 + np.array([255, 0, 0]) * 0.5).astype(np.uint8)
                 x0, y0, x1, y1 = [int(v) for v in r["bbox"]]
-                cv2.rectangle(overlay, (x0, y0), (x1, y1), (0, 255, 0), 2)
-                label = " | ".join(filter(None, [r.get("class_name"), r.get("color"), r.get("hold_type")]))
-                cv2.putText(overlay, label, (x0, max(0, y0 - 4)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+
+                color_name = r.get("color")
+                box_bgr = _COLOR_BGR.get(color_name, (0, 255, 0))
+                cv2.rectangle(overlay, (x0, y0), (x1, y1), box_bgr, 3)
+
+                hold_type = r.get("hold_type")
+                seg_label = r.get("class_name", "")
+                type_label = hold_type if (hold_type and hold_type not in ("UNKNOWN", None)) else seg_label
+                label_parts = [p for p in [type_label, color_name] if p and p != "UNKNOWN"]
+                label = " | ".join(label_parts)
+
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.8
+                pos = (x0, max(22, y0 - 6))
+                cv2.putText(overlay, label, pos, font, font_scale, (255, 255, 255), 4, cv2.LINE_AA)
+                cv2.putText(overlay, label, pos, font, font_scale, (0, 0, 0), 2, cv2.LINE_AA)
             Image.fromarray(overlay).save(out_dir / img_path.name)
 
     with open(out_dir / "predictions.json", "w") as f:
