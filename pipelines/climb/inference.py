@@ -80,13 +80,17 @@ class ClimbPipeline:
         color_model_name: str = "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k",
         color_class_names: list[str] | None = None,
         color_image_size: int = 448,
+<<<<<<< Updated upstream
         type_weights: str | Path | None = None,
         type_model_name: str = "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k",
         type_class_names: list[str] | None = None,
         type_image_size: int = 448,
         use_sam_refine: bool = False,
+=======
+        use_sam_refine: bool = True,
+>>>>>>> Stashed changes
         sam_model: str = "facebook/sam2.1-hiera-large",
-        use_tta: bool = False,
+        use_tta: bool = True,
         score_thr: float = 0.3,
         mask_threshold: float = 0.5,
         overlap_mask_area_threshold: float = 0.8,
@@ -102,6 +106,8 @@ class ClimbPipeline:
         sam_min_iou: float = 0.70,
         sam_min_stability: float = 0.60,
         min_fill_ratio: float = 0.15,
+        unknown_fallback_thr: float = 0.0,
+        unknown_margin_thr: float = 0.0,
         device: str = "cuda",
     ) -> None:
         self.device = torch.device(device)
@@ -118,6 +124,8 @@ class ClimbPipeline:
         self.sam_min_iou = sam_min_iou
         self.sam_min_stability = sam_min_stability
         self.min_fill_ratio = min_fill_ratio
+        self.unknown_fallback_thr = unknown_fallback_thr
+        self.unknown_margin_thr = unknown_margin_thr
         self.detector_image_size = detector_image_size
         self.tile_if_over = tile_if_over
         self.tile_batch = tile_batch
@@ -304,13 +312,20 @@ class ClimbPipeline:
         probs = torch.cat(chunks, dim=0).float().cpu().numpy()
         top_idx = probs.argmax(axis=1)
         top_conf = probs[np.arange(len(top_idx)), top_idx]
+        top2_part = np.partition(probs, -2, axis=1)
+        margin_np = top2_part[:, -1] - top2_part[:, -2]
 
         for k, vi in enumerate(valid_idxs):
             idx = int(top_idx[k])
+            conf = float(top_conf[k])
+            margin = float(margin_np[k])
+            confident = conf >= self.unknown_fallback_thr and margin >= self.unknown_margin_thr
+            color = self.color_class_names[idx] if confident else "UNKNOWN"
             out[vi] = {
                 **instances[vi],
-                "color": self.color_class_names[idx],
-                "color_conf": float(top_conf[k]),
+                "color": color,
+                "color_conf": conf,
+                "color_margin": margin,
                 "color_probs": probs[k].tolist(),
             }
         return out
@@ -391,11 +406,19 @@ def run_climb_inference(
     output: str,
     color_weights: str | None = None,
     color_model_config: str = "eva02_color",
+<<<<<<< Updated upstream
     type_weights: str | None = None,
     type_model_config: str = "eva02_type",
     use_sam_refine: bool = False,
     sam_model: str = "facebook/sam2.1-hiera-large",
     use_tta: bool = False,
+=======
+    use_sam_refine: bool = True,
+    sam_model: str = "facebook/sam2.1-hiera-large",
+    use_tta: bool = False,
+    score_thr: float = 0.5,
+    preview: bool = False,
+>>>>>>> Stashed changes
 ):
     device = cfg.torch.device
     _default_backbone = "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k"
@@ -432,6 +455,7 @@ def run_climb_inference(
         use_sam_refine=use_sam_refine,
         sam_model=sam_model,
         use_tta=use_tta,
+        score_thr=score_thr,
         device=device,
     )
 
