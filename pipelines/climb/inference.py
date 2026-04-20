@@ -455,13 +455,10 @@ def run_climb_inference(
         for r in results:
             rle = dict(r["mask_rle"])
             rle["counts"] = rle["counts"].encode("ascii")
-            m = cocomask.decode(rle).astype(bool)
-            overlay[m] = (overlay[m] * 0.5 + np.array([255, 0, 0]) * 0.5).astype(np.uint8)
             x0, y0, x1, y1 = [int(v) for v in r["bbox"]]
 
             color_name = r.get("color")
             box_bgr = _COLOR_BGR.get(color_name, (0, 255, 0))
-            cv2.rectangle(overlay, (x0, y0), (x1, y1), box_bgr, 3)
 
             hold_type = r.get("hold_type")
             seg_label = r.get("class_name", "")
@@ -470,8 +467,9 @@ def run_climb_inference(
             label = " | ".join(label_parts)
 
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 0.8
+            font_scale = 0.55
             pos = (x0, max(22, y0 - 6))
+            cv2.rectangle(overlay, (x0, y0), (x1, y1), box_bgr, 3)
             cv2.putText(overlay, label, pos, font, font_scale, (255, 255, 255), 4, cv2.LINE_AA)
             cv2.putText(overlay, label, pos, font, font_scale, (0, 0, 0), 2, cv2.LINE_AA)
         Image.fromarray(overlay).save(out_dir / img_path.name)

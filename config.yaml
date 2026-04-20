@@ -1,5 +1,5 @@
 torch:
-  device: mps
+  device: cuda
   seed: 42
   num_workers: 2
 
@@ -168,16 +168,16 @@ models:
     amp_dtype: bf16
     grad_accum: 2
     weight_decay: 0.05
-    warmup_epochs: 3
+    warmup_epochs: 5
     label_smoothing: 0.05
     ema_decay: 0.9998
     train:
-      batch_size: 32
+      batch_size: 16
       lr: 0.0002
       epochs: 40
       scheduler: cosine
     validate:
-      batch_size: 32
+      batch_size: 16
 
   eva02_color:
     pipeline: eva02_color
