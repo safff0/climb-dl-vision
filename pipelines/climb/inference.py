@@ -66,6 +66,10 @@ class ClimbPipeline:
         color_model_name: str = "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k",
         color_class_names: list[str] | None = None,
         color_image_size: int = 448,
+        type_weights: str | Path | None = None,
+        type_model_name: str = "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k",
+        type_class_names: list[str] | None = None,
+        type_image_size: int = 448,
         use_sam_refine: bool = False,
         sam_model: str = "facebook/sam2.1-hiera-large",
         use_tta: bool = False,
@@ -80,6 +84,7 @@ class ClimbPipeline:
         color_masked: bool = True,
         color_pad: float = 0.15,
         color_chunk_size: int = 32,
+        type_chunk_size: int = 32,
         sam_min_iou: float = 0.70,
         sam_min_stability: float = 0.60,
         min_fill_ratio: float = 0.15,
@@ -94,6 +99,8 @@ class ClimbPipeline:
         self.color_masked = color_masked
         self.color_pad = color_pad
         self.color_chunk_size = color_chunk_size
+        self.type_image_size = type_image_size
+        self.type_chunk_size = type_chunk_size
         self.sam_min_iou = sam_min_iou
         self.sam_min_stability = sam_min_stability
         self.min_fill_ratio = min_fill_ratio
@@ -137,6 +144,24 @@ class ClimbPipeline:
             self.color_model.to(self.device).eval()
             self._color_mean = torch.tensor(IMNET_MEAN, device=self.device).view(1, 3, 1, 1)
             self._color_std = torch.tensor(IMNET_STD, device=self.device).view(1, 3, 1, 1)
+
+        self.type_model = None
+        self.type_class_names: list[str] = []
+        if type_weights is not None:
+            import timm
+            from safetensors.torch import load_file
+
+            if type_class_names is None:
+                raise ValueError("type_class_names required when type_weights is provided")
+            self.type_class_names = list(type_class_names)
+            self.type_model = timm.create_model(
+                type_model_name, pretrained=False, num_classes=len(self.type_class_names)
+            )
+            state = load_file(str(type_weights))
+            self.type_model.load_state_dict(state, strict=False)
+            self.type_model.to(self.device).eval()
+            self._type_mean = torch.tensor(IMNET_MEAN, device=self.device).view(1, 3, 1, 1)
+            self._type_std = torch.tensor(IMNET_STD, device=self.device).view(1, 3, 1, 1)
 
         self.sam = None
         if self.use_sam_refine:
@@ -276,6 +301,56 @@ class ClimbPipeline:
             }
         return out
 
+    @torch.inference_mode()
+    def _classify_types(self, image: np.ndarray, instances: list[dict]) -> list[dict]:
+        if not instances or self.type_model is None:
+            return [{**inst, "hold_type": None, "type_conf": 0.0} for inst in instances]
+
+        H_im, W_im = image.shape[:2]
+        S = self.type_image_size
+
+        crops: list[np.ndarray] = []
+        valid_idxs: list[int] = []
+        for i, inst in enumerate(instances):
+            x0, y0, x1, y1 = inst["bbox"]
+            if x1 - x0 < 8 or y1 - y0 < 8:
+                continue
+            crop = image[int(y0):int(y1), int(x0):int(x1)].copy()
+            crops.append(_letterbox(crop, S))
+            valid_idxs.append(i)
+
+        out: list[dict] = [
+            {**inst, "hold_type": "UNKNOWN", "type_conf": 0.0} for inst in instances
+        ]
+        if not valid_idxs:
+            return out
+
+        arr_u8 = np.stack(crops, axis=0)
+        batch = torch.from_numpy(arr_u8).to(self.device, non_blocking=True)
+        batch = batch.permute(0, 3, 1, 2).contiguous().float().div_(255.0)
+        batch = (batch - self._type_mean) / self._type_std
+
+        chunks: list[torch.Tensor] = []
+        with torch.amp.autocast(self.device.type, dtype=torch.float16):
+            for s in range(0, batch.shape[0], self.type_chunk_size):
+                sub = batch[s: s + self.type_chunk_size]
+                if self.use_tta:
+                    chunks.append(classifier_tta_rot_flip(sub, self.type_model))
+                else:
+                    chunks.append(torch.softmax(self.type_model(sub), dim=1))
+        probs = torch.cat(chunks, dim=0).float().cpu().numpy()
+        top_idx = probs.argmax(axis=1)
+        top_conf = probs[np.arange(len(top_idx)), top_idx]
+
+        for k, vi in enumerate(valid_idxs):
+            idx = int(top_idx[k])
+            out[vi] = {
+                **instances[vi],
+                "hold_type": self.type_class_names[idx],
+                "type_conf": float(top_conf[k]),
+            }
+        return out
+
     def process(self, image: str | Path | np.ndarray) -> list[dict]:
         if isinstance(image, (str, Path)):
             img = _read_rgb(Path(image))
@@ -285,6 +360,7 @@ class ClimbPipeline:
         instances = self._detect(img)
         instances = self._refine_masks(img, instances)
         instances = self._classify_colors(img, instances)
+        instances = self._classify_types(img, instances)
 
         for inst in instances:
             inst["mask_rle"] = _mask_to_rle(inst["mask"])
@@ -301,14 +377,18 @@ def run_climb_inference(
     output: str,
     color_weights: str | None = None,
     color_model_config: str = "eva02_color",
+    type_weights: str | None = None,
+    type_model_config: str = "eva02_type",
     use_sam_refine: bool = False,
     sam_model: str = "facebook/sam2.1-hiera-large",
     use_tta: bool = False,
     preview: bool = False,
 ):
     device = cfg.torch.device
+    _default_backbone = "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k"
+
     color_class_names: list[str] | None = None
-    color_model_name = "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k"
+    color_model_name = _default_backbone
     color_image_size = 448
     if color_weights is not None:
         ccfg = cfg.model_cfg(color_model_config)
@@ -316,12 +396,27 @@ def run_climb_inference(
         color_model_name = ccfg.get("backbone", color_model_name)
         color_image_size = ccfg.get("image_size", color_image_size)
 
+    type_class_names: list[str] | None = None
+    type_model_name = _default_backbone
+    type_image_size = 448
+    if type_weights is not None:
+        from data.crop_dataset import get_dataset_info
+        tcfg = cfg.model_cfg(type_model_config)
+        type_model_name = tcfg.get("backbone", type_model_name)
+        type_image_size = tcfg.get("image_size", type_image_size)
+        info = get_dataset_info(type_model_config)
+        type_class_names = info.class_names
+
     pipe = ClimbPipeline(
         maskformer_dir=maskformer_dir,
         color_weights=color_weights,
         color_model_name=color_model_name,
         color_class_names=color_class_names,
         color_image_size=color_image_size,
+        type_weights=type_weights,
+        type_model_name=type_model_name,
+        type_class_names=type_class_names,
+        type_image_size=type_image_size,
         use_sam_refine=use_sam_refine,
         sam_model=sam_model,
         use_tta=use_tta,
@@ -353,7 +448,7 @@ def run_climb_inference(
                 overlay[m] = (overlay[m] * 0.5 + np.array([255, 0, 0]) * 0.5).astype(np.uint8)
                 x0, y0, x1, y1 = [int(v) for v in r["bbox"]]
                 cv2.rectangle(overlay, (x0, y0), (x1, y1), (0, 255, 0), 2)
-                label = f"{r.get('class_name', '?')} {r.get('color', '')}".strip()
+                label = " | ".join(filter(None, [r.get("class_name"), r.get("color"), r.get("hold_type")]))
                 cv2.putText(overlay, label, (x0, max(0, y0 - 4)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
             Image.fromarray(overlay).save(out_dir / img_path.name)

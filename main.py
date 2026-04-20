@@ -73,20 +73,24 @@ def full_inference(segmentor_weights, color_weights, type_weights, gnn_weights, 
 @cli.command("climb-inference")
 @click.option("--maskformer-dir", "-m", required=True)
 @click.option("--color-weights", "-c", default=None)
+@click.option("--type-weights", "-t", default=None)
 @click.option("--image-dir", "-d", required=True)
 @click.option("--output", "-o", default="results/")
 @click.option("--color-model", default="eva02_color")
+@click.option("--type-model", default="eva02_type")
 @click.option("--use-sam/--no-sam", default=False)
 @click.option("--sam-model", default="facebook/sam2.1-hiera-large")
 @click.option("--tta/--no-tta", default=False)
 @click.option("--preview", is_flag=True, default=False)
-def climb_inference(maskformer_dir, color_weights, image_dir, output, color_model, use_sam, sam_model, tta, preview):
+def climb_inference(maskformer_dir, color_weights, type_weights, image_dir, output, color_model, type_model, use_sam, sam_model, tta, preview):
     run_climb_inference(
         maskformer_dir=maskformer_dir,
         image_dir=image_dir,
         output=output,
         color_weights=color_weights,
         color_model_config=color_model,
+        type_weights=type_weights,
+        type_model_config=type_model,
         use_sam_refine=use_sam,
         sam_model=sam_model,
         use_tta=tta,
