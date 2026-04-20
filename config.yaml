@@ -1,5 +1,5 @@
 torch:
-  device: cuda
+  device: mps
   seed: 42
   num_workers: 2
 
@@ -159,6 +159,25 @@ models:
       scheduler: cosine
     validate:
       batch_size: 1
+
+  eva02_type:
+    pipeline: eva02_type
+    dataset: "datasets/hold_type"
+    backbone: "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k"
+    image_size: 448
+    amp_dtype: bf16
+    grad_accum: 2
+    weight_decay: 0.05
+    warmup_epochs: 3
+    label_smoothing: 0.05
+    ema_decay: 0.9998
+    train:
+      batch_size: 32
+      lr: 0.0002
+      epochs: 40
+      scheduler: cosine
+    validate:
+      batch_size: 32
 
   eva02_color:
     pipeline: eva02_color

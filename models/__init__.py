@@ -16,6 +16,7 @@ def create_model(name: str, **kwargs) -> nn.Module:
 
 import models.color_gnn
 import models.eva02_color
+import models.eva02_type
 import models.hold_classifier
 import models.mask2former
 import models.mask_rcnn
