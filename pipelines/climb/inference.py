@@ -80,15 +80,11 @@ class ClimbPipeline:
         color_model_name: str = "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k",
         color_class_names: list[str] | None = None,
         color_image_size: int = 448,
-<<<<<<< Updated upstream
         type_weights: str | Path | None = None,
         type_model_name: str = "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k",
         type_class_names: list[str] | None = None,
         type_image_size: int = 448,
-        use_sam_refine: bool = False,
-=======
         use_sam_refine: bool = True,
->>>>>>> Stashed changes
         sam_model: str = "facebook/sam2.1-hiera-large",
         use_tta: bool = True,
         score_thr: float = 0.3,
@@ -406,19 +402,13 @@ def run_climb_inference(
     output: str,
     color_weights: str | None = None,
     color_model_config: str = "eva02_color",
-<<<<<<< Updated upstream
     type_weights: str | None = None,
     type_model_config: str = "eva02_type",
-    use_sam_refine: bool = False,
-    sam_model: str = "facebook/sam2.1-hiera-large",
-    use_tta: bool = False,
-=======
     use_sam_refine: bool = True,
     sam_model: str = "facebook/sam2.1-hiera-large",
     use_tta: bool = False,
     score_thr: float = 0.5,
     preview: bool = False,
->>>>>>> Stashed changes
 ):
     device = cfg.torch.device
     _default_backbone = "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k"

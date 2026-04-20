@@ -77,20 +77,13 @@ def full_inference(segmentor_weights, color_weights, type_weights, gnn_weights, 
 @click.option("--image-dir", "-d", required=True)
 @click.option("--output", "-o", default="results/")
 @click.option("--color-model", default="eva02_color")
-<<<<<<< Updated upstream
 @click.option("--type-model", default="eva02_type")
-@click.option("--use-sam/--no-sam", default=False)
-@click.option("--sam-model", default="facebook/sam2.1-hiera-large")
-@click.option("--tta/--no-tta", default=False)
-def climb_inference(maskformer_dir, color_weights, type_weights, image_dir, output, color_model, type_model, use_sam, sam_model, tta):
-=======
 @click.option("--use-sam/--no-sam", default=True)
 @click.option("--sam-model", default="facebook/sam2.1-hiera-large")
 @click.option("--tta/--no-tta", default=False)
 @click.option("--score-thr", type=float, default=0.5)
 @click.option("--preview", is_flag=True, default=False)
-def climb_inference(maskformer_dir, color_weights, image_dir, output, color_model, use_sam, sam_model, tta, score_thr, preview):
->>>>>>> Stashed changes
+def climb_inference(maskformer_dir, color_weights, type_weights, image_dir, output, color_model, type_model, use_sam, sam_model, tta, score_thr, preview):
     run_climb_inference(
         maskformer_dir=maskformer_dir,
         image_dir=image_dir,
@@ -102,11 +95,8 @@ def climb_inference(maskformer_dir, color_weights, image_dir, output, color_mode
         use_sam_refine=use_sam,
         sam_model=sam_model,
         use_tta=tta,
-<<<<<<< Updated upstream
-=======
         score_thr=score_thr,
         preview=preview,
->>>>>>> Stashed changes
     )
 
 
