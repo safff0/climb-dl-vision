@@ -1,17 +1,12 @@
-// Climb Pipeline Viewer – vanilla-JS SPA.
-// Loads /api/{summary,holds,pose,contacts,events,route} on boot, renders three
-// tabs (Hold-level, Route-level, Contacts Gantt). Keeps state on window.VIZ
-// for easy debugging from the devtools console.
 
 (() => {
 
-// Climbing-pigment palette tuned for the paper substrate.
 const COCO_COLOR = {
   Orange: "#d83a1c", Green: "#4f7a4a", Blue: "#28637a", Red: "#a72710",
   Yellow: "#c89a2a", Pink: "#b14b65", Purple: "#5e4f7a", Black: "#1a1814",
   White: "#ebe6da", Gray: "#6e695d", UNKNOWN: "#9a9587",
 };
-// Earthy hold-state pigments — matches `--bronze`, `--moss`, `--slate` in CSS.
+
 const STATE_COLOR = {
   core: "#b78343", possible: "#6b7a4a", rejected: "#5d5852", unknown: "#9a9587",
 };
@@ -22,11 +17,9 @@ const LIMB_HEX = {
   left_foot:  "#4f7a4a",
   right_foot: "#28637a",
 };
-const SKELETON_COLOR = "#f3efe6";   // paper for dark video
+const SKELETON_COLOR = "#f3efe6";   
 const SKELETON_STROKE_W = 2.6;
 
-// COCO-WholeBody + Goliath mapping → pairs we actually want to draw. Body +
-// feet; hands shown as wrist dots only to avoid clutter.
 const SKELETON_EDGES = [
   ["left_shoulder","right_shoulder"],
   ["left_shoulder","left_elbow"], ["left_elbow","left_wrist"],
@@ -46,7 +39,7 @@ const KP_DOTS = [
   "left_ankle","right_ankle","left_heel","right_heel",
   "left_big_toe","right_big_toe",
 ];
-// Hand pivot points the pipeline actually treats as "contact fingers"
+
 const HAND_TIP_NAMES = {
   left_hand:  ["left_wrist","left_hand_5","left_hand_9"],
   right_hand: ["right_wrist","right_hand_5","right_hand_9"],
@@ -63,18 +56,17 @@ const V = window.VIZ = {
   filterState: new Set(["all"]),
   filterColor: new Set(["all"]),
   activeKf: null,
-  // ---- Hold-level photo-set (independent from video attempts) ----
-  holdsMode: "keyframes",   // "keyframes" or "photos"
+  
+  holdsMode: "keyframes",   
   photos: [],
-  photoCache: new Map(),    // pid -> {holds, width, height}
-  activePhoto: null,        // pid
+  photoCache: new Map(),    
+  activePhoto: null,        
 };
 
 function api(path) {
   return `/api/${V.attemptId}${path.startsWith("/") ? path : "/" + path}`;
 }
 
-// ---------- bootstrap ----------
 (async function init() {
   try {
     const [attempts, photos] = await Promise.all([
@@ -89,12 +81,12 @@ function api(path) {
 
     setupAttemptPicker(attempts);
     bindTabs();
-    bindVideoPanel();       // attaches event listeners once
-    bindHoldFilters();      // ditto — handlers read V state dynamically
+    bindVideoPanel();       
+    bindHoldFilters();      
 
     await loadAttempt(V.attemptId);
     if (V.holdsMode === "photos") {
-      // Hold-level draws from the photo-set, independent of attempt selection.
+      
       renderPhotoList();
       const first = V.photos[0]?.id;
       if (first) await selectPhoto(first);
@@ -127,7 +119,7 @@ function setupAttemptPicker(attempts) {
 
 async function loadAttempt(aid) {
   V.attemptId = aid;
-  // Drop state that must be rebuilt:
+  
   V.holdsById = new Map();
   V.poseByFrame = new Map();
   V.filterState = new Set(["all"]);
@@ -155,11 +147,15 @@ async function loadAttempt(aid) {
   resetVideoSource();
   renderGantt(true);
   renderEventsPanel();
+  refreshBetaTabAvailability();
+  
+  $("#betaRealVideo")?.removeAttribute("data-attempt");
+  $("#betaSynthVideo")?.removeAttribute("data-attempt");
+  
+  if (isBetaTabActive()) renderBetaPanel();
 
   if (V.holdsMode === "photos") {
-    // Hold-level driven from photo-set; only color filters depend on the
-    // active photo (rebuilt when a photo is selected). State filters get
-    // hidden because photo-level holds have no route_state.
+    
     setHoldFiltersForPhotosMode();
   } else {
     renderColorFilters();
@@ -185,7 +181,61 @@ function resetVideoSource() {
   v.load();
 }
 
-// ---------- header + metrics ----------
+async function renderBetaPanel() {
+  const att = (V.attempts || []).find(a => a.id === V.attemptId);
+  const stage = $("#betaStage");
+  const empty = $("#betaEmpty");
+  const synth = $("#betaSynthVideo");
+  const inlineMeta = $("#betaInlineMeta");
+
+  $("#betaTitle").innerHTML = `synthetic <em>beta</em> · ${escapeHtml(V.attemptId)}`;
+
+  if (!att || !att.has_beta) {
+    stage.style.display = "none";
+    empty.hidden = false;
+    if (inlineMeta) inlineMeta.textContent = "";
+    return;
+  }
+  stage.style.display = "";
+  empty.hidden = true;
+
+  if (synth.dataset.attempt !== V.attemptId) {
+    synth.dataset.attempt = V.attemptId;
+    synth.src = api("/beta_video");
+    synth.load();
+  }
+
+  try {
+    const s = await fetch(api("/beta_summary")).then(r => r.json());
+    if (inlineMeta) inlineMeta.textContent = formatBetaMetaInline(s);
+  } catch {
+    if (inlineMeta) inlineMeta.textContent = "";
+  }
+}
+
+function formatBetaMetaInline(s) {
+  if (!s || typeof s !== "object" || !Object.keys(s).length) return "";
+  const parts = [];
+  const num = (v, digits=0) =>
+    (typeof v === "number")
+      ? (digits ? v.toFixed(digits) : Math.round(v))
+      : v;
+  if (s.beta_source ?? s.source) parts.push(`${s.beta_source ?? s.source}`);
+  if (s.candidate !== undefined) parts.push(`cand ${s.candidate}`);
+  if (s.fps !== undefined)       parts.push(`${num(s.fps, 1)} fps`);
+  if (s.frames !== undefined || s.frame_count !== undefined)
+    parts.push(`${num(s.frames ?? s.frame_count)} frames`);
+  if (s.duration_sec !== undefined)
+    parts.push(`${num(s.duration_sec, 1)} s`);
+  if (s.target_color)            parts.push(s.target_color);
+  if (s.actions !== undefined)   parts.push(`${num(s.actions)} actions`);
+  return parts.join("  ·  ");
+}
+
+function refreshBetaTabAvailability() {
+  
+}
+
 function renderHeader() {
   const vid = V.summary.video_id ?? "?";
   const target = V.summary.target_color ?? "?";
@@ -231,23 +281,35 @@ function fmtDuration(sec) {
   return `${m}:${String(s%60).padStart(2,"0")}`;
 }
 
-// ---------- tabs ----------
 function bindTabs() {
   $$("#tabs .tab-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       $$("#tabs .tab-btn").forEach(b => b.classList.toggle("active", b === btn));
       const key = btn.dataset.tab;
       $$("main .panel").forEach(p => p.classList.toggle("active", p.id === `panel-${key}`));
-      if (key === "route") ensureVideoReady();
+      if (key === "route") {
+        ensureVideoReady();
+        
+        window.__viz_resizeVideo?.();
+        window.__viz_paintOverlay?.();
+        setTimeout(() => {
+          window.__viz_resizeVideo?.();
+          window.__viz_paintOverlay?.();
+        }, 80);
+      }
       if (key === "gantt") renderGantt();
+      if (key === "beta")  renderBetaPanel();
     });
   });
 }
 
-// ==================== HOLD-LEVEL ====================
+function isBetaTabActive() {
+  const btn = document.querySelector('#tabs .tab-btn[data-tab="beta"]');
+  return btn?.classList.contains("active");
+}
 
 function collectKeyframeIndices() {
-  // Keyframes = union of frames_seen across all holds, sorted.
+  
   const set = new Set();
   V.holds.forEach(h => (h.frames_seen || []).forEach(fi => set.add(fi)));
   return Array.from(set).sort((a,b) => a-b);
@@ -268,7 +330,6 @@ function renderKfList() {
   });
 }
 
-// =================== PHOTO-SET (Hold-level only) ===================
 function renderPhotoList() {
   const list = $("#kfList");
   list.dataset.kicker = "photos";
@@ -295,12 +356,10 @@ async function selectPhoto(pid) {
     cached = await fetch(`/api/photo/${encodeURIComponent(pid)}/holds`).then(r => r.json());
     V.photoCache.set(pid, cached);
   }
-  // Surface this photo's holds the same way attempt holds are: via V.holds /
-  // V.holdsById, because renderHoldsSvg/showHoldTip read those globals.
+  
   V.holds = cached.holds;
   V.holdsById = new Map(cached.holds.map(h => [h.id, h]));
 
-  // Refresh colour-filter chips for this photo's distinct colours.
   renderColorFilters();
 
   const img = $("#kfImg");
@@ -311,7 +370,7 @@ async function selectPhoto(pid) {
 }
 
 function renderColorFilters() {
-  // Use distinct colors present in holds
+  
   const colors = new Set();
   V.holds.forEach(h => colors.add(h.color));
   const parent = $("#colorFilters");
@@ -362,8 +421,12 @@ function bindHoldFilters() {
     $$("#kfSvg .hold-poly").forEach(p => p.classList.toggle("no-fill", !fill));
   });
   $("#toggleBboxes").addEventListener("change", () => {
-    const show = $("#toggleBboxes").checked;
-    $$("#kfSvg .hold-bbox").forEach(b => b.style.display = show ? "" : "none");
+    
+    if (V.holdsMode === "photos" && V.activePhoto != null) {
+      renderHoldsSvg(V.activePhoto);
+    } else if (V.activeKf != null) {
+      renderHoldsSvg(V.activeKf);
+    }
   });
 }
 
@@ -392,11 +455,6 @@ function renderHoldsSvg(_unusedKey) {
   const natW = img.naturalWidth, natH = img.naturalHeight;
   if (!natW || !natH) return;
 
-  // The image has a paper-card border that we must skip, and the SVG's
-  // containing block is the .kf-frame (because its CSS filter establishes
-  // a containing block). offsetLeft/Top measures the offset RELATIVE to
-  // that same positioned ancestor — so it always lines up with the image
-  // regardless of layout origin.
   const cs = getComputedStyle(img);
   const bl = parseFloat(cs.borderLeftWidth) || 0;
   const bt = parseFloat(cs.borderTopWidth)  || 0;
@@ -412,15 +470,13 @@ function renderHoldsSvg(_unusedKey) {
   svg.innerHTML = "";
   const fillOn = $("#togglePolyFill").checked;
   const bboxOn = $("#toggleBboxes").checked;
-  // In photos mode, draw every hold from the active photo. In keyframes
-  // mode, draw only holds whose frames_seen includes the current frame.
+  
   const visible = (V.holdsMode === "photos")
     ? V.holds
     : V.holds.filter(h => (h.frames_seen || []).includes(_unusedKey));
 
   visible.forEach(h => {
-    // In photos mode there is no route_state — colour the polygon by its
-    // detected colour pigment instead so the wall reads like a map.
+    
     const stroke = (V.holdsMode === "photos")
       ? (COCO_COLOR[h.color] || "#6e695d")
       : (STATE_COLOR[h.route_state] || "#6e695d");
@@ -529,7 +585,7 @@ function onHoldMouseMove(e) {
   const t = $("#holdTooltip");
   const wrap = $("#kfWrap").getBoundingClientRect();
   const tw = t.offsetWidth, th = t.offsetHeight;
-  // Prefer top-right of cursor; flip on right edge
+  
   let x = e.clientX - wrap.left + 14;
   let y = e.clientY - wrap.top + 14;
   if (x + tw > wrap.width - 6)  x = e.clientX - wrap.left - tw - 14;
@@ -539,23 +595,19 @@ function onHoldMouseMove(e) {
 }
 function hideHoldTip() { $("#holdTooltip").hidden = true; }
 
-// Re-position SVG overlay when image layout changes (resize).
 window.addEventListener("resize", () => {
   if (V.activeKf !== null) renderHoldsSvg(V.activeKf);
 });
-
-
-// ==================== ROUTE-LEVEL (video + pose overlay) ====================
 
 let poseRafId = 0;
 
 function bindVideoPanel() {
   const v = $("#mainVideo");
-  // src is assigned per-attempt in resetVideoSource()
+  
   const cvs = $("#poseCanvas");
   const resize = () => {
     if (!v.videoWidth) return;
-    // Match canvas to the displayed video rect
+    
     const r = v.getBoundingClientRect();
     cvs.width  = v.videoWidth;
     cvs.height = v.videoHeight;
@@ -564,9 +616,15 @@ function bindVideoPanel() {
     cvs.style.left   = (r.left - v.parentElement.getBoundingClientRect().left) + "px";
     cvs.style.top    = (r.top  - v.parentElement.getBoundingClientRect().top)  + "px";
   };
-  v.addEventListener("loadedmetadata", resize);
+  
+  window.__viz_resizeVideo = resize;
+  window.__viz_paintOverlay = () => paintOverlay();
+
+  const onMeta = () => { resize(); paintOverlay(); };
+  v.addEventListener("loadedmetadata", onMeta);
+  v.addEventListener("loadeddata",     onMeta);
   v.addEventListener("resize", resize);
-  window.addEventListener("resize", resize);
+  window.addEventListener("resize", () => { resize(); paintOverlay(); });
 
   const loop = () => {
     paintOverlay();
@@ -576,7 +634,12 @@ function bindVideoPanel() {
   v.addEventListener("pause", () => { cancelAnimationFrame(poseRafId); poseRafId = 0; paintOverlay(); });
   v.addEventListener("seeked", paintOverlay);
   v.addEventListener("timeupdate", paintOverlay);
-  // First frame:
+
+  for (const id of ["showPose", "showContactsOnVid", "showRouteHolds"]) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", () => paintOverlay());
+  }
+
   setTimeout(() => { resize(); paintOverlay(); }, 200);
 }
 
@@ -592,8 +655,7 @@ function currentFrameIdx() {
 }
 
 function nearestPoseFrame(fi) {
-  // pose frames are sampled (may not have every video frame). Binary search
-  // the closest.
+  
   const arr = V.pose;
   if (!arr.length) return null;
   let lo = 0, hi = arr.length - 1;
@@ -635,7 +697,7 @@ function drawRouteHoldsOverlay(ctx, W, H) {
   V.holds.forEach(h => {
     if (h.route_state === "rejected") return;
     const c = STATE_COLOR[h.route_state] || "#6a7180";
-    ctx.fillStyle = c + "33"; // low alpha
+    ctx.fillStyle = c + "33"; 
     ctx.strokeStyle = c + "bb";
     ctx.lineWidth = 1.2;
     h.polygons.forEach(poly => {
@@ -653,9 +715,11 @@ function drawRouteHoldsOverlay(ctx, W, H) {
 
 function drawSkeleton(ctx, kps) {
   ctx.save();
-  ctx.strokeStyle = "#4bc07a";
-  ctx.lineWidth = 2.4;
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  
+  ctx.strokeStyle = "rgba(20,18,15,0.85)";
+  ctx.lineWidth = 6;
   SKELETON_EDGES.forEach(([a, b]) => {
     const pa = kps[a], pb = kps[b];
     if (!pa || !pb) return;
@@ -664,17 +728,31 @@ function drawSkeleton(ctx, kps) {
     ctx.lineTo(pb[0], pb[1]);
     ctx.stroke();
   });
-  ctx.fillStyle = "#fff";
+  
+  ctx.strokeStyle = "#75e0a3";
+  ctx.lineWidth = 3;
+  SKELETON_EDGES.forEach(([a, b]) => {
+    const pa = kps[a], pb = kps[b];
+    if (!pa || !pb) return;
+    ctx.beginPath();
+    ctx.moveTo(pa[0], pa[1]);
+    ctx.lineTo(pb[0], pb[1]);
+    ctx.stroke();
+  });
+  
   KP_DOTS.forEach(n => {
     const p = kps[n]; if (!p) return;
-    ctx.beginPath(); ctx.arc(p[0], p[1], 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p[0], p[1], 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(20,18,15,0.85)"; ctx.fill();
+    ctx.beginPath(); ctx.arc(p[0], p[1], 3, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff"; ctx.fill();
   });
   ctx.restore();
 }
 
 function currentContactOnLimb(fi, limb) {
   const segs = V.contacts[limb] || [];
-  // Segments are in video-frame space (remapped by the pipeline).
+  
   for (const s of segs) {
     if (s.start_frame <= fi && fi <= s.end_frame) return s;
   }
@@ -697,19 +775,19 @@ function drawContactDots(ctx, fi) {
     const anchor = anchorByLimb[limb].map(n => kps[n]).find(Boolean);
     if (!anchor) return;
     ctx.save();
-    // Ring around limb anchor:
+    
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(anchor[0], anchor[1], 10, 0, Math.PI * 2);
     ctx.stroke();
-    // Filled dot if in contact with a hold, hollow if no contact/occluded:
+    
     if (seg && seg.state === "contact" && seg.hold_id) {
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.arc(anchor[0], anchor[1], 6, 0, Math.PI * 2);
       ctx.fill();
-      // Line to hold centre:
+      
       const h = V.holdsById.get(seg.hold_id);
       if (h) {
         ctx.strokeStyle = color + "bb";
@@ -720,7 +798,7 @@ function drawContactDots(ctx, fi) {
         ctx.lineTo(h.center[0], h.center[1]);
         ctx.stroke();
         ctx.setLineDash([]);
-        // Target circle on the hold:
+        
         ctx.fillStyle = color + "88";
         ctx.beginPath();
         ctx.arc(h.center[0], h.center[1], 6, 0, Math.PI * 2);
@@ -777,9 +855,6 @@ function updateLiveContactsPanel(fi) {
   st.innerHTML = rows.map(([k,v]) => `<div class="row"><span>${k}</span><span>${v}</span></div>`).join("");
 }
 
-
-// ==================== CONTACTS GANTT ====================
-
 let ganttBuilt = false;
 
 function renderGantt(force = false) {
@@ -821,7 +896,7 @@ function renderGantt(force = false) {
       });
       bar.appendChild(seg);
     });
-    // Cursor to track current video time
+    
     const cursor = document.createElement("div");
     cursor.className = "gantt-cursor";
     cursor.id = `cursor-${limb}`;
@@ -831,7 +906,7 @@ function renderGantt(force = false) {
     row.appendChild(bar);
     wrap.appendChild(row);
   });
-  // Time axis
+  
   const axis = document.createElement("div"); axis.className = "gantt-axis";
   const axisLbl = document.createElement("div"); axisLbl.textContent = "";
   const ticks = document.createElement("div"); ticks.className = "gantt-ticks";
@@ -848,7 +923,6 @@ function renderGantt(force = false) {
   axis.appendChild(ticks);
   wrap.appendChild(axis);
 
-  // Update cursor on video time change (bind once)
   const vid = $("#mainVideo");
   if (vid && !vid.dataset.ganttCursorBound) {
     vid.dataset.ganttCursorBound = "1";

@@ -1,4 +1,3 @@
-"""Pose jitter diagnostics for an AttemptAnalysis JSON."""
 from __future__ import annotations
 
 import argparse
@@ -23,13 +22,11 @@ from pipeline.common.schemas import (
     limb_point,
 )
 
-
 def _main_frames(analysis: AttemptAnalysis):
     main = next((t for t in analysis.pose_tracks if t.is_main_climber), None)
     if main is None and analysis.pose_tracks:
         main = analysis.pose_tracks[0]
     return [] if main is None else sorted(main.frames, key=lambda f: f.frame)
-
 
 REPORT_WINDOWS: dict[str, tuple[int, int]] = {
     "crop_sensitive_125_137": (125, 137),
@@ -41,9 +38,7 @@ REPORT_WINDOWS: dict[str, tuple[int, int]] = {
     "later_regression_1310_1331": (1310, 1331),
 }
 
-
 RAW_PIVOT_CFG = LimbPointConfig(min_conf=0.0, use_precomputed_pivot=False)
-
 
 def _point_in_polygon(x: float, y: float, poly: list[tuple[float, float]]) -> bool:
     inside = False
@@ -58,7 +53,6 @@ def _point_in_polygon(x: float, y: float, poly: list[tuple[float, float]]) -> bo
         j = i
     return inside
 
-
 def _inside_torso(frame, x: float, y: float) -> bool:
     kp = frame.keypoints_smooth or frame.keypoints_raw
     names = ("left_shoulder", "right_shoulder", "right_hip", "left_hip")
@@ -69,7 +63,6 @@ def _inside_torso(frame, x: float, y: float) -> bool:
             return False
         pts.append((float(p.x), float(p.y)))
     return _point_in_polygon(x, y, pts)
-
 
 def _forearm_baseline(frames, limb: str) -> float | None:
     if limb not in (Limb.LEFT_HAND.value, Limb.RIGHT_HAND.value):
@@ -91,7 +84,6 @@ def _forearm_baseline(frames, limb: str) -> float | None:
         return None
     return float(np.median(np.asarray(vals, dtype=np.float64)))
 
-
 def _jerk(points: np.ndarray, fps: float) -> np.ndarray:
     if len(points) < 4:
         return np.zeros(0, dtype=np.float64)
@@ -99,7 +91,6 @@ def _jerk(points: np.ndarray, fps: float) -> np.ndarray:
     acc = np.diff(vel, axis=0) * fps
     jerk = np.diff(acc, axis=0) * fps
     return np.hypot(jerk[:, 0], jerk[:, 1])
-
 
 def _max_low_gap(confs: np.ndarray, threshold: float) -> int:
     max_run = 0
@@ -111,7 +102,6 @@ def _max_low_gap(confs: np.ndarray, threshold: float) -> int:
         else:
             cur = 0
     return max_run
-
 
 def _limb_series(frames, fps: float) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     rows: list[dict[str, Any]] = []
@@ -276,7 +266,6 @@ def _limb_series(frames, fps: float) -> tuple[list[dict[str, Any]], dict[str, di
         }
     return rows, summary
 
-
 def _keypoint_stats(frames) -> dict[str, Any]:
     names = sorted({n for f in frames for n in f.keypoints_raw})
     out: dict[str, Any] = {}
@@ -309,7 +298,6 @@ def _keypoint_stats(frames) -> dict[str, Any]:
             "top_jump": float(j.max()) if j.size else 0.0,
         }
     return out
-
 
 def _finger_distances(frames) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -355,7 +343,6 @@ def _finger_distances(frames) -> tuple[list[dict[str, Any]], dict[str, Any]]:
             }
     return rows, summary
 
-
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         path.write_text("")
@@ -365,12 +352,10 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writeheader()
         writer.writerows(rows)
 
-
 def _top_jumps(rows: list[dict[str, Any]], limit: int = 100) -> list[dict[str, Any]]:
     candidates = [r for r in rows if r["step_px"] != ""]
     candidates.sort(key=lambda r: float(r["step_px"]), reverse=True)
     return candidates[:limit]
-
 
 def _plot_limb_conf(rows: list[dict[str, Any]], out: Path) -> None:
     fig, ax = plt.subplots(figsize=(12, 4), dpi=140)
@@ -387,7 +372,6 @@ def _plot_limb_conf(rows: list[dict[str, Any]], out: Path) -> None:
     fig.savefig(out)
     plt.close(fig)
 
-
 def _plot_limb_step(rows: list[dict[str, Any]], out: Path) -> None:
     fig, ax = plt.subplots(figsize=(12, 4), dpi=140)
     for limb in LIMBS:
@@ -402,7 +386,6 @@ def _plot_limb_step(rows: list[dict[str, Any]], out: Path) -> None:
     fig.tight_layout()
     fig.savefig(out)
     plt.close(fig)
-
 
 def _plot_limb_jerk(frames, fps: float, out: Path) -> None:
     fig, ax = plt.subplots(figsize=(12, 4), dpi=140)
@@ -445,7 +428,6 @@ def _plot_limb_jerk(frames, fps: float, out: Path) -> None:
     fig.savefig(out)
     plt.close(fig)
 
-
 def _plot_finger_dist(rows: list[dict[str, Any]], out: Path) -> None:
     fig, ax = plt.subplots(figsize=(12, 4), dpi=140)
     for key in sorted({(r["limb"], r["finger"]) for r in rows}):
@@ -459,7 +441,6 @@ def _plot_finger_dist(rows: list[dict[str, Any]], out: Path) -> None:
     fig.tight_layout()
     fig.savefig(out)
     plt.close(fig)
-
 
 def _crop_summary(crop_diag: list[dict[str, Any]], out_dir: Path) -> dict[str, Any]:
     if not crop_diag:
@@ -491,7 +472,6 @@ def _crop_summary(crop_diag: list[dict[str, Any]], out_dir: Path) -> dict[str, A
         "keypoints_near_edge_mean": float(edge.mean()),
         "keypoints_near_edge_max": float(edge.max()),
     }
-
 
 def _contact_metrics(
     analysis: AttemptAnalysis,
@@ -610,7 +590,6 @@ def _contact_metrics(
         out[limb] = limb_out
     return out
 
-
 def _top_jump_sheet(video: Path, top: list[dict[str, Any]], out: Path) -> None:
     if not video.exists() or not top:
         return
@@ -641,7 +620,6 @@ def _top_jump_sheet(video: Path, top: list[dict[str, Any]], out: Path) -> None:
         x = (i % cols) * 320
         sheet[y:y + 180, x:x + 320] = thumb
     cv2.imwrite(str(out), sheet)
-
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -697,7 +675,6 @@ def main() -> None:
         "crop": crop,
     }
     write_json(args.out / "pose_jitter_summary.json", summary)
-
 
 if __name__ == "__main__":
     main()

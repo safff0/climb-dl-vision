@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<!-- Persistent SVG defs: paper grain noise + halftone for backgrounds -->
+
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <filter id="paperGrain" x="0" y="0" width="100%" height="100%">
@@ -62,11 +62,15 @@
     <span class="tab-num">03</span>
     <span class="tab-label">Contacts</span>
   </button>
+  <button data-tab="beta" class="tab-btn">
+    <span class="tab-num">04</span>
+    <span class="tab-label">Beta</span>
+  </button>
   <span class="tab-rule"></span>
 </nav>
 
 <main>
-  <!-- =================== HOLD-LEVEL =================== -->
+  
   <section id="panel-holds" class="panel active">
     <aside class="kf-list" id="kfList" data-kicker="keyframes"></aside>
     <div class="holds-stage">
@@ -107,7 +111,6 @@
     </div>
   </section>
 
-  <!-- =================== ROUTE-LEVEL =================== -->
   <section id="panel-route" class="panel">
     <div class="video-stage">
       <div class="video-holder">
@@ -138,7 +141,34 @@
     <aside class="live-contacts" id="liveContacts"></aside>
   </section>
 
-  <!-- =================== CONTACTS GANTT =================== -->
+  <section id="panel-beta" class="panel">
+    <div class="beta-shell">
+      <div class="beta-header">
+        <span class="kicker">stickman synthesis</span>
+        <h2 class="serif" id="betaTitle">synthetic <em>beta</em></h2>
+        <p class="beta-sub" id="betaSub">M3 retrieval-aware IK · 17-COCO pose track over the route graph</p>
+      </div>
+      <div class="beta-stage" id="betaStage">
+        <div class="beta-pane">
+          <div class="beta-pane-label">
+            <span class="kicker">synthetic stickman</span>
+            <span class="dot-marker dot-rope"></span>
+            <span class="beta-pane-meta-inline" id="betaInlineMeta"></span>
+          </div>
+          <div class="beta-video-holder">
+            <video id="betaSynthVideo" preload="metadata" controls playsinline></video>
+          </div>
+        </div>
+      </div>
+      <div class="beta-empty" id="betaEmpty" hidden>
+        <h3 class="serif italic">synthetic_beta.mp4 not available</h3>
+        <p>This attempt has no rendered stickman track. Generate one with
+        <code>pipeline.synthesis.cli_synthesize</code> and drop the resulting
+        <code>synthetic_beta.mp4</code> into this attempt's folder.</p>
+      </div>
+    </div>
+  </section>
+
   <section id="panel-gantt" class="panel">
     <div class="gantt-shell">
       <div class="gantt-header">

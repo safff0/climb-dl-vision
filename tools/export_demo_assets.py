@@ -1,28 +1,3 @@
-"""Compile AttemptAnalysis dumps into a browser-ready demo dataset.
-
-Emits one compact ``client.json`` per attempt plus the static assets the
-web UI loads directly: ``route_frame.jpg``, ``pickmap.png``,
-``mask_contours.json``, ``overlay_720p.mp4`` and WebP versions of the
-existing PNG visualisations. A top-level ``manifest.json`` lists every
-attempt with minimal metadata for the landing grid.
-
-Design rules (from plan A0):
-
-* Python does the heavy geometry — the browser never decodes RLEs or
-  runs contour extraction.
-* Pickmap is a hidden PNG where every hold is filled with a unique RGB
-  triple so that click-to-hold is a single ``getImageData`` lookup.
-* ``client.json`` stays small: keep hold summaries, contact segments,
-  events, metrics; drop the 133-keypoint per-frame pose payload.
-
-Usage:
-    python tools/export_demo_assets.py \
-        --analysis-dir results/thewayup/yolo \
-        --raw-video-dir stage_datasets/the_way_up \
-        --full-pipeline-dir results/full_pipeline_v2 \
-        --out demo/public/data \
-        --transcode-video
-"""
 from __future__ import annotations
 
 import argparse
@@ -41,36 +16,24 @@ _REPO = Path(__file__).resolve().parents[1]
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from pipeline.common.masks import rle_to_mask  # noqa: E402
-
+from pipeline.common.masks import rle_to_mask              
 
 LIMBS = ("left_hand", "right_hand", "left_foot", "right_foot")
 
-
-# ------------------------------------------------------------------
-# helpers
-# ------------------------------------------------------------------
-
-
 def _idx_to_rgb(idx: int) -> tuple[int, int, int]:
-    """Encode a 1-based hold index as RGB. 0,0,0 = background."""
     return (idx & 0xFF, (idx >> 8) & 0xFF, (idx >> 16) & 0xFF)
-
 
 def _run(cmd: list[str]) -> None:
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
         print(f"  ! {' '.join(cmd[:3])}... failed: {res.stderr.strip().splitlines()[-1] if res.stderr else 'rc=' + str(res.returncode)}")
 
-
 def _png_to_webp(src: Path, dst: Path, quality: int = 82) -> bool:
     if not src.exists():
         return False
     try:
         im = Image.open(src).convert("RGBA" if src.suffix == ".png" else "RGB")
-        # WebP doesn't carry alpha for the final overlay; route_overlay has
-        # alpha but heatmaps/timeline are RGB. We drop alpha for trajectories
-        # and timelines (opaque), keep it for route_overlay.
+                                                                           
         if src.name == "route_overlay.png":
             im.save(dst, "WEBP", quality=quality, method=6)
         else:
@@ -83,7 +46,6 @@ def _png_to_webp(src: Path, dst: Path, quality: int = 82) -> bool:
     except Exception as e:
         print(f"  ! png->webp {src.name} failed: {e}")
         return False
-
 
 def _extract_first_frame(video: Path, dst: Path, target_w: int = 720) -> bool:
     if not video.exists():
@@ -98,7 +60,6 @@ def _extract_first_frame(video: Path, dst: Path, target_w: int = 720) -> bool:
     ]
     _run(cmd)
     return dst.exists()
-
 
 def _transcode_720p(src: Path, dst: Path) -> bool:
     if not src.exists():
@@ -116,12 +77,6 @@ def _transcode_720p(src: Path, dst: Path) -> bool:
     _run(cmd)
     return dst.exists()
 
-
-# ------------------------------------------------------------------
-# core: per-attempt compile
-# ------------------------------------------------------------------
-
-
 @dataclass
 class Source:
     attempt_id: str
@@ -136,7 +91,6 @@ class Source:
     overlay_mp4: Path | None
     raw_video: Path | None
 
-
 def discover_sources(
     analysis_dir: Path, raw_video_dir: Path, full_pipeline_dir: Path | None
 ) -> list[Source]:
@@ -144,7 +98,7 @@ def discover_sources(
     for sub in sorted(analysis_dir.iterdir()):
         if not sub.is_dir() or not (sub / "analysis.json").exists():
             continue
-        clip = sub.name  # e.g. p9_orange
+        clip = sub.name                  
         pnum, _, color = clip.partition("_")
         raw = raw_video_dir / pnum / f"{color}.mp4" if color else None
         overlay = sub / "overlay.mp4"
@@ -161,8 +115,7 @@ def discover_sources(
             overlay_mp4=overlay if overlay.exists() else None,
             raw_video=raw if raw and raw.exists() else None,
         ))
-    # Optional: attach a full-pipeline variant so the demo can showcase
-    # real Mask2Former masks.
+                                                                       
     if full_pipeline_dir and full_pipeline_dir.exists():
         for sub in sorted(full_pipeline_dir.iterdir()):
             if not sub.is_dir() or not (sub / "analysis.json").exists():
@@ -186,20 +139,15 @@ def discover_sources(
             ))
     return out
 
-
 def _mask_from_hold(hold: dict, wh: tuple[int, int]) -> np.ndarray | None:
-    """Return a boolean mask for a hold. Uses mask_rle if present, else a
-    filled bbox. Falls back to None if geometry is invalid.
-    """
     W, H = wh
     rle = hold.get("mask_rle")
     if rle is not None and rle.get("counts") and rle.get("size"):
         try:
             m = rle_to_mask(rle)
-            # cocomask returns (H, W) boolean; match the route_frame
-            # orientation later if sizes disagree.
+                                                                    
             if m.shape[0] != H or m.shape[1] != W:
-                # try swap (pipeline stores [H, W] but we may have probed (W, H))
+                                                                                 
                 if m.shape == (W, H):
                     m = m.T
             return m.astype(bool)
@@ -217,13 +165,11 @@ def _mask_from_hold(hold: dict, wh: tuple[int, int]) -> np.ndarray | None:
     m[y1:y2, x1:x2] = True
     return m
 
-
 def _probe_image_size(src: Source) -> tuple[int, int]:
-    """Return (W, H). Prefer the route overlay if available."""
     if src.route_overlay and src.route_overlay.exists():
         try:
             with Image.open(src.route_overlay) as im:
-                return im.size  # (W, H)
+                return im.size          
         except Exception:
             pass
     if src.raw_video and src.raw_video.exists():
@@ -240,21 +186,16 @@ def _probe_image_size(src: Source) -> tuple[int, int]:
                 return int(w), int(h)
         except Exception:
             pass
-    # sensible default
+                      
     return 1280, 720
-
 
 def _build_pickmap_and_contours(
     holds: list[dict], wh: tuple[int, int]
 ) -> tuple[Image.Image, dict[str, list[list[list[int]]]], dict[str, list[int]]]:
-    """Rasterise holds into a pickmap PNG. Returns (image, contours dict,
-    pick_rgb dict). Index 0 = background; holds get indices 1..N mapping
-    to unique RGB triples.
-    """
     try:
         import cv2
     except ImportError:
-        cv2 = None  # type: ignore
+        cv2 = None                
 
     W, H = wh
     pick = np.zeros((H, W, 3), dtype=np.uint8)
@@ -270,7 +211,6 @@ def _build_pickmap_and_contours(
         hid = h["physical_track_id"]
         pick_rgb[hid] = list(rgb)
 
-        # Polygons
         if cv2 is not None:
             u8 = mask.astype(np.uint8) * 255
             cnts, _ = cv2.findContours(u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -284,14 +224,13 @@ def _build_pickmap_and_contours(
             if polys:
                 contours[hid] = polys
         if hid not in contours:
-            # fallback: bbox corners
+                                    
             b = h.get("bbox")
             if b and len(b) >= 4:
                 x1, y1, x2, y2 = (int(round(v)) for v in b)
                 contours[hid] = [[[x1, y1], [x2, y1], [x2, y2], [x1, y2]]]
 
     return Image.fromarray(pick, mode="RGB"), contours, pick_rgb
-
 
 def _slim_client_json(
     src: Source,
@@ -402,9 +341,6 @@ def _slim_client_json(
         ],
     }
 
-    # Pick main climber body trajectory at keyframes (every ~4 frames)
-    # so the client can draw a small body path without loading the
-    # 1 300-frame pose dump.
     body_traj: list[list[float]] = []
     tracks = analysis.get("pose_tracks", [])
     main = next((t for t in tracks if t.get("is_main_climber")), tracks[0] if tracks else None)
@@ -451,7 +387,6 @@ def _slim_client_json(
         "body_trajectory": body_traj,
     }
 
-
 def compile_attempt(src: Source, out_dir: Path, transcode_video: bool) -> dict | None:
     dst = out_dir / "attempts" / src.attempt_id
     dst.mkdir(parents=True, exist_ok=True)
@@ -461,14 +396,12 @@ def compile_attempt(src: Source, out_dir: Path, transcode_video: bool) -> dict |
 
     wh = _probe_image_size(src)
 
-    # ---- pickmap + contours
     holds = analysis["route"]["holds"]
     pick_img, contours, pick_rgb = _build_pickmap_and_contours(holds, wh)
     pick_img.save(dst / "pickmap.png", optimize=True)
     with (dst / "mask_contours.json").open("w") as f:
         json.dump(contours, f, separators=(",", ":"))
 
-    # ---- route_frame.jpg (first frame of raw video when possible)
     rf_ok = False
     if src.raw_video and src.raw_video.exists():
         rf_ok = _extract_first_frame(src.raw_video, dst / "route_frame.jpg", target_w=min(wh[0], 1080))
@@ -480,7 +413,6 @@ def compile_attempt(src: Source, out_dir: Path, transcode_video: bool) -> dict |
         except Exception:
             pass
 
-    # ---- visualisations → webp
     if src.route_overlay:
         _png_to_webp(src.route_overlay, dst / "route_overlay.webp", quality=85)
     if src.timeline:
@@ -495,7 +427,6 @@ def compile_attempt(src: Source, out_dir: Path, transcode_video: bool) -> dict |
             p = src.heatmap_dir / f"heatmap_{limb}.png"
             _png_to_webp(p, hm_out / f"{limb}.webp", quality=70)
 
-    # ---- overlay_720p.mp4
     video_asset: str | None = None
     if transcode_video:
         ok = False
@@ -524,7 +455,6 @@ def compile_attempt(src: Source, out_dir: Path, transcode_video: bool) -> dict |
     with (dst / "client.json").open("w") as f:
         json.dump(client, f, separators=(",", ":"))
 
-    # manifest entry
     manifest = {
         "id": src.attempt_id,
         "label": src.label,
@@ -542,12 +472,6 @@ def compile_attempt(src: Source, out_dir: Path, transcode_video: bool) -> dict |
         "has_true_masks": any(h.get("mask_rle") for h in holds),
     }
     return manifest
-
-
-# ------------------------------------------------------------------
-# main
-# ------------------------------------------------------------------
-
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -588,7 +512,6 @@ def main() -> None:
     with (args.out / "manifest.json").open("w") as f:
         json.dump(manifest, f, indent=2)
     print(f"\nWrote {len(entries)} attempts to {args.out / 'manifest.json'}")
-
 
 if __name__ == "__main__":
     main()

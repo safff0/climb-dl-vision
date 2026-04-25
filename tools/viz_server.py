@@ -1,35 +1,3 @@
-"""Local web viewer for pipeline ``analysis.json`` results.
-
-Default mode — drop everything into a directory layout and just run::
-
-    uv run python tools/viz_server.py
-    # opens http://localhost:8765
-
-Expected layout (relative to cwd; configurable with --attempts-root / --photos-root)::
-
-    attempts/
-        att1/                  # any directory name — becomes the attempt id
-            analysis.json      # produced by pipeline.cli.video_analyze
-            (any video.mp4 / overlay.mp4)
-        att2/
-            analysis.json
-        ...
-    photos/
-        photos.json            # produced by tools/infer_photo_holds.py
-        images/*.jpg
-
-Subdirectories of ``attempts/`` that contain a top-level ``analysis.json``
-are auto-registered as attempts (label = dir name). The Hold-level tab
-auto-uses ``photos/photos.json`` if present; otherwise it falls back to
-per-attempt video keyframes.
-
-Explicit overrides remain available::
-
-    uv run python tools/viz_server.py \
-        --attempt p9_orange=runs/.../analysis.json \
-        --photos runs/photo_holds_demo/photos.json \
-        --port 8765
-"""
 from __future__ import annotations
 
 import argparse
@@ -55,13 +23,7 @@ from pycocotools import mask as cocomask
 
 STATIC_DIR = Path(__file__).parent / "viz_static"
 
-
-# -------------------- state (populated once at startup) --------------------
-
 class Attempt:
-    """All viewer data for one analysis.json + its source video, plus an
-    LRU keyframe cache so we avoid re-decoding the same JPEG on every tab
-    switch."""
 
     def __init__(self, aid: str, analysis_path: Path, video_path: Path) -> None:
         self.id = aid
@@ -75,18 +37,14 @@ class Attempt:
         self.events: dict = {}
         self.summary: dict = {}
         self.route_summary: dict = {}
+                                                                             
+        self.beta_video_path: Path | None = None
+        self.beta_summary: dict | None = None
         self.keyframe_cache: "OrderedDict[int, bytes]" = OrderedDict()
         self.keyframe_cache_max = 60
         self.lock = threading.Lock()
 
-
 class PhotoEntry:
-    """One photo + its hold detections, used by the Hold-level tab.
-
-    Image is served from disk (``image_path``); ``holds`` already has
-    polygons decoded from the COCO RLE so the JSON the browser receives is
-    drawing-ready.
-    """
 
     def __init__(self, pid: str, label: str, image_path: Path,
                  width: int, height: int, holds: list[dict]) -> None:
@@ -97,19 +55,13 @@ class PhotoEntry:
         self.height = height
         self.holds = holds
 
-
 STATE: dict = {
-    "attempts": OrderedDict(),   # aid -> Attempt
-    "photos":   OrderedDict(),   # pid -> PhotoEntry  (Hold-level, photo-only)
+    "attempts": OrderedDict(),                   
+    "photos":   OrderedDict(),                                                
     "default":  None,
 }
 
-
-# -------------------- helpers --------------------
-
 def rle_to_polygons(rle_dict) -> list[list[list[int]]]:
-    """COCO RLE -> list of polygon point lists (x, y). Approximates contours
-    with INTER-chain to keep the payload small. Returns [] on empty mask."""
     if not rle_dict:
         return []
     rle = dict(rle_dict)
@@ -123,20 +75,14 @@ def rle_to_polygons(rle_dict) -> list[list[list[int]]]:
     for c in contours:
         if c.shape[0] < 3:
             continue
-        # Simplify with Douglas-Peucker at 1px epsilon — smooths without losing
-        # any visible detail at screen scale.
+                                                                               
         eps = max(1.0, 0.005 * cv2.arcLength(c, True))
         c2 = cv2.approxPolyDP(c, eps, True)
         pts = c2.squeeze(axis=1).astype(int).tolist()
         polys.append(pts)
     return polys
 
-
 def preprocess_photo_holds(raw_holds: list[dict]) -> list[dict]:
-    """Same shape as ``preprocess_holds`` but for photo-set: no
-    ``frames_seen`` / ``route_state`` / temporal aggregation. Polygons are
-    decoded from each RLE so the browser doesn't have to ship a decoder.
-    """
     out: list[dict] = []
     for h in raw_holds:
         polys = rle_to_polygons(h.get("mask_rle"))
@@ -154,7 +100,6 @@ def preprocess_photo_holds(raw_holds: list[dict]) -> list[dict]:
             "fill_ratio": float(h.get("fill_ratio", 0.0)),
         })
     return out
-
 
 def load_photo_set(json_path: Path) -> list[PhotoEntry]:
     payload = json.loads(json_path.read_text())
@@ -178,7 +123,6 @@ def load_photo_set(json_path: Path) -> list[PhotoEntry]:
             holds=preprocess_photo_holds(p.get("holds", [])),
         ))
     return out
-
 
 def preprocess_holds(analysis: dict) -> list[dict]:
     holds = analysis.get("route", {}).get("holds", [])
@@ -204,9 +148,7 @@ def preprocess_holds(analysis: dict) -> list[dict]:
         })
     return out
 
-
 def preprocess_pose(analysis: dict) -> list[dict]:
-    """Trim pose frames to only the fields we need for overlay rendering."""
     tracks = analysis.get("pose_tracks", [])
     if not tracks:
         return []
@@ -227,14 +169,12 @@ def preprocess_pose(analysis: dict) -> list[dict]:
         })
     return out
 
-
 def _bbox_as_list(b):
     if isinstance(b, list):
         return [float(x) for x in b]
     if isinstance(b, dict):
         return [float(b["x1"]), float(b["y1"]), float(b["x2"]), float(b["y2"])]
     return None
-
 
 def build_summary(analysis: dict) -> dict:
     route = analysis.get("route", {})
@@ -254,7 +194,6 @@ def build_summary(analysis: dict) -> dict:
         "metrics": analysis.get("metrics", {}),
     }
 
-
 def extract_keyframe(video_path: Path, frame_idx: int, quality: int = 82) -> bytes:
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -269,7 +208,6 @@ def extract_keyframe(video_path: Path, frame_idx: int, quality: int = 82) -> byt
         raise RuntimeError("jpeg encode failed")
     return buf.tobytes()
 
-
 def keyframe_bytes(att: Attempt, frame_idx: int) -> bytes:
     with att.lock:
         if frame_idx in att.keyframe_cache:
@@ -283,14 +221,10 @@ def keyframe_bytes(att: Attempt, frame_idx: int) -> bytes:
             att.keyframe_cache.popitem(last=False)
     return data
 
-
-# -------------------- http handler --------------------
-
 _RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 
-
 class Handler(BaseHTTPRequestHandler):
-    # Suppress stdout spam; keep errors.
+                                        
     def log_message(self, fmt: str, *args) -> None:
         logging.getLogger("viz").info("%s - - %s", self.client_address[0], fmt % args)
 
@@ -332,10 +266,8 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
-    # ---- static helpers ----
-
     def _serve_static(self, rel_path: str) -> None:
-        # Prevent path traversal.
+                                 
         rel = posixpath.normpath("/" + rel_path).lstrip("/")
         fpath = (STATIC_DIR / rel).resolve()
         if not str(fpath).startswith(str(STATIC_DIR.resolve())) or not fpath.is_file():
@@ -347,10 +279,10 @@ class Handler(BaseHTTPRequestHandler):
         data = fpath.read_bytes()
         self._send_bytes(data, ctype, cache="no-cache")
 
-    # ---- video with Range ----
-
     def _serve_video(self, att: "Attempt") -> None:
-        vpath = att.video_path
+        self._serve_video_path(att.video_path)
+
+    def _serve_video_path(self, vpath: Path | None) -> None:
         if not vpath or not vpath.exists():
             self._send_error(HTTPStatus.NOT_FOUND, "video not available")
             return
@@ -391,7 +323,7 @@ class Handler(BaseHTTPRequestHandler):
             self._stream_copy(f, 0, length)
 
     def _stream_copy(self, f, offset: int, length: int) -> None:
-        # Copies ``length`` bytes from current file position to self.wfile.
+                                                                           
         remaining = length
         chunk = 64 * 1024
         try:
@@ -404,10 +336,8 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
-    # ---- dispatch ----
-
     def do_HEAD(self) -> None:
-        # Minimal HEAD support for video/static preflights.
+                                                           
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
         att, sub = _match_attempt_path(path)
@@ -440,12 +370,12 @@ class Handler(BaseHTTPRequestHandler):
                      "video_id": a.summary.get("video_id"),
                      "target_color": a.summary.get("target_color"),
                      "holds_total": a.summary.get("holds_total", 0),
-                     "holds_by_state": a.summary.get("holds_by_state", {})}
+                     "holds_by_state": a.summary.get("holds_by_state", {}),
+                     "has_beta": a.beta_video_path is not None}
                     for a in STATE["attempts"].values()
                 ])
                 return
 
-            # ---- photo-set endpoints (photo-only Hold-level tab) ----
             if path == "/api/photos":
                 self._send_json([
                     {"id": p.id, "label": p.label,
@@ -456,7 +386,7 @@ class Handler(BaseHTTPRequestHandler):
                 ])
                 return
             if path.startswith("/api/photo/"):
-                # /api/photo/<pid>/(image|holds)
+                                                
                 rest = path[len("/api/photo/"):]
                 if "/" not in rest:
                     self._send_error(HTTPStatus.NOT_FOUND, "expected /api/photo/<id>/{image,holds}")
@@ -506,6 +436,16 @@ class Handler(BaseHTTPRequestHandler):
                 if sub == "/video":
                     self._serve_video(att)
                     return
+                if sub == "/beta_video":
+                    if att.beta_video_path is None or not att.beta_video_path.exists():
+                        self._send_error(HTTPStatus.NOT_FOUND,
+                                         f"no synthetic_beta.mp4 for {att.id}")
+                        return
+                    self._serve_video_path(att.beta_video_path)
+                    return
+                if sub == "/beta_summary":
+                    self._send_json(att.beta_summary or {})
+                    return
                 self._send_error(HTTPStatus.NOT_FOUND, f"unknown sub-path: {sub}")
                 return
 
@@ -513,10 +453,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._serve_static(path.lstrip("/"))
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "not found")
-        except Exception as e:  # pragma: no cover — defensive
+        except Exception as e:                                
             logging.getLogger("viz").exception("handler failed: %s", e)
             self._send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(e))
-
 
 def _photo_class_counts(holds: list[dict]) -> dict[str, int]:
     out: dict[str, int] = {}
@@ -525,16 +464,13 @@ def _photo_class_counts(holds: list[dict]) -> dict[str, int]:
         out[c] = out.get(c, 0) + 1
     return out
 
-
 def _match_attempt_path(path: str):
-    """``/api/<aid>/sub`` -> (Attempt, '/sub'). Returns (None, None) if not
-    matched or if the attempt id is unknown."""
     if not path.startswith("/api/"):
         return None, None
     rest = path[len("/api/"):]
     if not rest:
         return None, None
-    # aid is the first segment; sub is everything after (including leading /)
+                                                                             
     slash = rest.find("/")
     aid = rest if slash < 0 else rest[:slash]
     sub = "" if slash < 0 else rest[slash:]
@@ -543,35 +479,24 @@ def _match_attempt_path(path: str):
         return None, None
     return att, sub
 
-
 class ThreadingServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-
-# -------------------- bootstrap --------------------
-
 def load_analysis(analysis_path: Path) -> dict:
     return json.loads(analysis_path.read_text())
 
-
 _AID_SAFE_RE = re.compile(r"[^a-zA-Z0-9_\-]")
 
-
 def _slugify(s: str) -> str:
-    """Make a string safe as an URL path segment."""
     s = _AID_SAFE_RE.sub("_", s)
     return s.strip("_") or "attempt"
 
-
 def _derive_label(path: Path) -> str:
-    """Fallback label from a path: usually ``parent_dir_name``."""
     parent = path.parent.name or path.stem
     return parent
 
-
 def _parse_attempt_spec(spec: str) -> tuple[str | None, Path]:
-    """``LABEL=path/to/analysis.json`` or ``LABEL:path`` or bare ``path``."""
     for sep in ("=", ":"):
         if sep in spec and not spec.startswith(("/", ".", "~")):
             head, tail = spec.split(sep, 1)
@@ -580,20 +505,45 @@ def _parse_attempt_spec(spec: str) -> tuple[str | None, Path]:
             return head, Path(tail)
     return None, Path(spec)
 
+def _resolve_video(analysis_path: Path, json_video: str | None,
+                   override: Path | None) -> Path | None:
+    if override and override.exists():
+        return override
+    canon = analysis_path.parent / "video.mp4"
+    if canon.exists():
+        return canon
+    if json_video:
+        bn = analysis_path.parent / Path(json_video).name
+        if bn.exists():
+            return bn
+        jp = Path(json_video)
+        if jp.exists():
+            return jp
+    return None
 
 def load_attempt(aid: str, analysis_path: Path, video_override: Path | None = None) -> Attempt:
     if not analysis_path.exists():
         raise FileNotFoundError(str(analysis_path))
     analysis = load_analysis(analysis_path)
-    vpath = video_override or Path(analysis.get("video_path", ""))
-    if not vpath.exists():
-        alt = analysis_path.parent / vpath.name
-        if alt.exists():
-            vpath = alt
-    if not vpath.exists():
-        raise FileNotFoundError(f"video for {aid}: {vpath}")
+    vpath = _resolve_video(analysis_path, analysis.get("video_path"), video_override)
+    if vpath is None:
+        raise FileNotFoundError(
+            f"video for {aid} not found.\n"
+            f"  Drop the source video as {analysis_path.parent / 'video.mp4'} or "
+            f"keep the path '{analysis.get('video_path')}' resolvable from cwd."
+        )
     att = Attempt(aid=aid, analysis_path=analysis_path, video_path=vpath)
     att.label = aid
+                                                                     
+    bv = analysis_path.parent / "synthetic_beta.mp4"
+    if bv.is_file():
+        att.beta_video_path = bv
+    bs = analysis_path.parent / "synthesis_summary.json"
+    if bs.is_file():
+        try:
+            att.beta_summary = json.loads(bs.read_text())
+        except Exception:
+            pass
     att.analysis = analysis
     att.holds_viz = preprocess_holds(analysis)
     att.pose_frames = preprocess_pose(analysis)
@@ -611,7 +561,6 @@ def load_attempt(aid: str, analysis_path: Path, video_override: Path | None = No
         "holds_by_state": att.summary["holds_by_state"],
     }
     return att
-
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
@@ -639,7 +588,6 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="[viz] %(message)s")
 
-    # Normalise into a list of (label_or_None, path, video_override)
     raw: list[tuple[str | None, Path, Path | None]] = []
     for spec in args.attempt:
         label, p = _parse_attempt_spec(spec)
@@ -647,8 +595,6 @@ def main() -> None:
     if args.analysis is not None:
         raw.append((None, args.analysis, args.video))
 
-    # Auto-discovery: if no explicit attempts were passed, scan attempts-root
-    # for subdirs with analysis.json. The directory's name is the label.
     if not raw and args.attempts_root.is_dir():
         discovered: list[tuple[str, Path]] = []
         for sub in sorted(args.attempts_root.iterdir()):
@@ -716,7 +662,6 @@ def main() -> None:
             srv.serve_forever()
         except KeyboardInterrupt:
             print("\n[viz] bye")
-
 
 if __name__ == "__main__":
     main()

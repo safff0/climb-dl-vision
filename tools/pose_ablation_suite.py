@@ -1,4 +1,3 @@
-"""Offline pose ablations on saved keypoints."""
 from __future__ import annotations
 
 import argparse
@@ -20,16 +19,13 @@ from pipeline.common.schemas import (
     limb_point,
 )
 
-
 PointFn = Callable[[dict[str, Keypoint], str], tuple[float, float, float]]
-
 
 def _main_frames(analysis: AttemptAnalysis):
     main = next((t for t in analysis.pose_tracks if t.is_main_climber), None)
     if main is None and analysis.pose_tracks:
         main = analysis.pose_tracks[0]
     return [] if main is None else sorted(main.frames, key=lambda f: f.frame)
-
 
 def _weighted(points: list[Keypoint]) -> tuple[float, float, float]:
     weights = [p.conf for p in points if p.conf > 0]
@@ -41,7 +37,6 @@ def _weighted(points: list[Keypoint]) -> tuple[float, float, float]:
     y = sum(p.y * w for p, w in zip(pts, weights)) / wsum
     return float(x), float(y), float(wsum / len(weights))
 
-
 def _legacy_pivot(kp: dict[str, Keypoint], limb: str) -> tuple[float, float, float]:
     if limb == Limb.LEFT_HAND.value:
         m = HAND_MAIN_IDX_LEFT
@@ -50,7 +45,6 @@ def _legacy_pivot(kp: dict[str, Keypoint], limb: str) -> tuple[float, float, flo
         m = HAND_MAIN_IDX_RIGHT
         return _weighted([kp.get(m[k], Keypoint(0, 0, 0)) for k in ("wrist", "mcp_index", "mcp_middle", "tip_index")])
     return limb_point(kp, limb, LimbPointConfig(min_conf=0.0, foot_min_conf=0.0, use_precomputed_pivot=False))
-
 
 def _hand_mode(mode: str) -> PointFn:
     def fn(kp: dict[str, Keypoint], limb: str) -> tuple[float, float, float]:
@@ -64,7 +58,6 @@ def _hand_mode(mode: str) -> PointFn:
             names += ["tip_index"]
         return _weighted([kp.get(m[n], Keypoint(0, 0, 0)) for n in names])
     return fn
-
 
 def _metrics(frames, fps: float, point_fn: PointFn) -> dict[str, dict[str, float]]:
     out: dict[str, dict[str, float]] = {}
@@ -114,7 +107,6 @@ def _metrics(frames, fps: float, point_fn: PointFn) -> dict[str, dict[str, float
         }
     return out
 
-
 def _flatten(metrics: dict[str, dict[str, dict[str, float]]]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for ablation, by_limb in metrics.items():
@@ -123,7 +115,6 @@ def _flatten(metrics: dict[str, dict[str, dict[str, float]]]) -> list[dict[str, 
             row.update(vals)
             rows.append(row)
     return rows
-
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -151,7 +142,6 @@ def main() -> None:
         writer.writerows(rows)
     with (args.out / "ablation_metrics.json").open("w") as f:
         json.dump(metrics, f, indent=2)
-
 
 if __name__ == "__main__":
     main()

@@ -1,9 +1,3 @@
-"""Cross-check vectorised Viterbi in contact/decode.py against a ported
-reference Python implementation of the original nested-loop form.
-
-This is a one-shot sanity check, not a unit test — we keep it so future
-edits to decode_limb() can be spot-checked without a full pipeline run.
-"""
 from __future__ import annotations
 
 import math
@@ -15,7 +9,6 @@ from pipeline.contact.decode import (
     DecodeConfig, NO_CONTACT, OCCLUDED, PADDED, _build_state_list,
     _log_softmax, decode_limb,
 )
-
 
 def _reference_decode_limb(
     hold_logits: np.ndarray,
@@ -121,7 +114,6 @@ def _reference_decode_limb(
     path.reverse()
     return path
 
-
 def _fake_hold(i: int, state: str = "core") -> PhysicalHold:
     return PhysicalHold(
         physical_track_id=f"h{i}",
@@ -142,7 +134,6 @@ def _fake_hold(i: int, state: str = "core") -> PhysicalHold:
         route_score=0.9,
     )
 
-
 def _run_case(seed: int, T: int, N_holds: int, K: int) -> None:
     rng = np.random.default_rng(seed)
     holds = [_fake_hold(i, "core" if i % 3 else "possible") for i in range(N_holds)]
@@ -158,38 +149,24 @@ def _run_case(seed: int, T: int, N_holds: int, K: int) -> None:
 
     cfg = DecodeConfig()
 
-    # decode_limb returns ContactSegments; for equivalence we compare the
-    # underlying path by re-deriving it via segments.
     segs = decode_limb(hold_logits, cands_per_frame, cfg, limb_conf=limb_conf)
-    # Build path from segs by identifying which global id each segment
-    # corresponds to is not trivial without state ids; instead compare
-    # via a coarse proxy: segment boundaries should match reference path's
-    # transitions. We therefore re-run reference, turn path into segments,
-    # and compare RLE boundaries + states.
+                                                                      
     ref_path = _reference_decode_limb(hold_logits, cands_per_frame, cfg, limb_conf=limb_conf)
 
-    # Compare raw boundary frames from the reference path.
     ref_boundaries = [
         t for t in range(1, T) if ref_path[t] != ref_path[t - 1]
     ]
     seg_boundaries = sorted({seg.start_frame for seg in segs if seg.start_frame > 0})
-    # The final decode_limb runs merging passes (short, flap, gap close),
-    # so the segment boundaries can legitimately differ from the raw
-    # Viterbi path. But the *Viterbi backbone* itself should be identical,
-    # which we check indirectly: for cases with min_contact_len=3, any
-    # boundary that survives should appear in the reference set too.
+                                                                         
     extras = [b for b in seg_boundaries if b not in ref_boundaries]
     assert not extras, f"seed={seed}: spurious segment boundaries {extras}"
 
-
 def main() -> None:
-    # Small but representative cases. The real Viterbi backbone is what we
-    # care about; we do not try to fuzz the post-merge rules here.
+                                                                          
     _run_case(seed=1, T=60, N_holds=20, K=6)
     _run_case(seed=2, T=120, N_holds=40, K=8)
     _run_case(seed=3, T=200, N_holds=80, K=8)
     print("viterbi equivalence: OK")
-
 
 if __name__ == "__main__":
     main()

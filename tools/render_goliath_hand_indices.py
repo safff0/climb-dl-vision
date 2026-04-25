@@ -1,4 +1,3 @@
-"""Render numbered Sapiens Goliath hand indices for selected frames."""
 from __future__ import annotations
 
 import argparse
@@ -9,7 +8,6 @@ import cv2
 
 from pipeline.common.schemas import AttemptAnalysis
 from pipeline.pose.sapiens_pose import PoseBackend, PoseEstimator, PoseEstimatorConfig
-
 
 def _read_frame(video: Path, frame_idx: int):
     cap = cv2.VideoCapture(str(video))
@@ -22,14 +20,12 @@ def _read_frame(video: Path, frame_idx: int):
     finally:
         cap.release()
 
-
 def _bboxes_from_diagnostics(path: Path) -> dict[int, tuple[float, float, float, float]]:
     if not path.exists():
         return {}
     data = json.loads(path.read_text())
     rows = data.get("tracked_smoothed_bboxes", {})
     return {int(k): tuple(float(v) for v in bb) for k, bb in rows.items()}
-
 
 def _bboxes_from_analysis(path: Path) -> dict[int, tuple[float, float, float, float]]:
     if not path.exists():
@@ -41,7 +37,6 @@ def _bboxes_from_analysis(path: Path) -> dict[int, tuple[float, float, float, fl
     if main is None:
         return {}
     return {f.frame: tuple(f.bbox.to_list()) for f in main.frames}
-
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -91,7 +86,6 @@ def main() -> None:
             frame_idx=frame_idx,
             time_sec=frame_idx / max(1.0, args.fps),
         )
-
 
 if __name__ == "__main__":
     main()
