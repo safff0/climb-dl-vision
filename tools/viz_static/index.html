@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Climb · Topo Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<!-- Persistent SVG defs: paper grain noise + halftone for backgrounds -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="paperGrain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="7"/>
+      <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .35 0"/>
+      <feComposite in2="SourceGraphic" operator="in"/>
+    </filter>
+    <pattern id="topoLines" x="0" y="0" width="6" height="6" patternUnits="userSpaceOnUse">
+      <path d="M0,0 L6,6" stroke="rgba(20,18,15,0.045)" stroke-width="0.5"/>
+    </pattern>
+    <pattern id="topoDots" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.7" fill="rgba(20,18,15,0.07)"/>
+    </pattern>
+  </defs>
+</svg>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">
+      <span class="brand-glyph">◆</span>
+      <span class="brand-rule"></span>
+    </div>
+    <div class="brand-txt">
+      <h1 class="title" id="title">Climb <em>Viewer</em></h1>
+      <p class="subtitle" id="subtitle">—</p>
+    </div>
+  </div>
+
+  <div class="attempt-picker" id="attemptPicker" hidden>
+    <span class="ap-label">attempt</span>
+    <select id="attemptSelect"></select>
+    <span class="ap-caret">↓</span>
+  </div>
+
+  <div class="metrics" id="metricsBadges"></div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="holds" class="tab-btn active">
+    <span class="tab-num">01</span>
+    <span class="tab-label">Hold-level</span>
+  </button>
+  <button data-tab="route" class="tab-btn">
+    <span class="tab-num">02</span>
+    <span class="tab-label">Route-level</span>
+  </button>
+  <button data-tab="gantt" class="tab-btn">
+    <span class="tab-num">03</span>
+    <span class="tab-label">Contacts</span>
+  </button>
+  <span class="tab-rule"></span>
+</nav>
+
+<main>
+  <!-- =================== HOLD-LEVEL =================== -->
+  <section id="panel-holds" class="panel active">
+    <aside class="kf-list" id="kfList" data-kicker="keyframes"></aside>
+    <div class="holds-stage">
+      <div class="filters" id="holdFilters">
+        <div class="filter-cluster">
+          <span class="filter-kicker">state</span>
+          <div class="filter-group" id="stateFilters">
+            <button data-state="all" class="chip active">all</button>
+            <button data-state="core" class="chip chip-core">core</button>
+            <button data-state="possible" class="chip chip-possible">possible</button>
+            <button data-state="rejected" class="chip chip-rejected">rejected</button>
+            <button data-state="unknown" class="chip chip-unknown">unknown</button>
+          </div>
+        </div>
+        <div class="filter-cluster">
+          <span class="filter-kicker">colour</span>
+          <div class="filter-group" id="colorFilters"></div>
+        </div>
+        <div class="filter-spacer"></div>
+        <label class="toggle">
+          <input type="checkbox" id="togglePolyFill" checked>
+          <span>fill</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="toggleBboxes">
+          <span>bbox</span>
+        </label>
+      </div>
+      <div class="kf-wrap" id="kfWrap">
+        <div class="kf-frame">
+          <img id="kfImg" alt="keyframe">
+          <svg id="kfSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
+        <div class="kf-corner kf-corner-tl"><span>▲</span></div>
+        <div class="kf-corner kf-corner-br"><span class="serif italic" id="kfCornerLabel">no frame</span></div>
+        <div class="tooltip" id="holdTooltip" hidden></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== ROUTE-LEVEL =================== -->
+  <section id="panel-route" class="panel">
+    <div class="video-stage">
+      <div class="video-holder">
+        <video id="mainVideo" preload="metadata" controls playsinline></video>
+        <canvas id="poseCanvas"></canvas>
+        <div class="video-overlay-corner">
+          <span class="serif italic">live</span>
+          <span class="dot-marker"></span>
+        </div>
+      </div>
+      <div class="vid-controls">
+        <label class="toggle">
+          <input type="checkbox" id="showPose" checked>
+          <span>skeleton</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="showContactsOnVid" checked>
+          <span>contact dots</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="showRouteHolds">
+          <span>route holds</span>
+        </label>
+        <span class="spacer"></span>
+        <span class="timecode" id="timecode">0.00<span class="tc-unit">s</span> / <span class="tc-frame">0</span></span>
+      </div>
+    </div>
+    <aside class="live-contacts" id="liveContacts"></aside>
+  </section>
+
+  <!-- =================== CONTACTS GANTT =================== -->
+  <section id="panel-gantt" class="panel">
+    <div class="gantt-shell">
+      <div class="gantt-header">
+        <span class="kicker">contact-trace</span>
+        <h2 class="serif" id="ganttTitle">per-limb hold engagement</h2>
+      </div>
+      <div class="gantt-wrap" id="ganttWrap"></div>
+    </div>
+    <aside class="events" id="eventsPanel"></aside>
+  </section>
+</main>
+
+<script src="/app.js" defer></script>
+</body>
+</html>

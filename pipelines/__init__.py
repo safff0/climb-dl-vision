@@ -24,3 +24,4 @@ import pipelines.eva02_type
 import pipelines.hold_classifier
 import pipelines.mask2former
 import pipelines.mask_rcnn
+import pipelines.route

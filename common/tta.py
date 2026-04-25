@@ -46,7 +46,7 @@ def detector_tta_hflip_scales(
     return all_preds
 
 
-def classifier_tta_rot_flip(imgs: torch.Tensor, model) -> torch.Tensor:
+def classifier_tta_rot_flip(imgs: torch.Tensor, model, temperature: float = 1.0) -> torch.Tensor:
     B = imgs.shape[0]
     stacked = torch.cat(
         [
@@ -58,5 +58,6 @@ def classifier_tta_rot_flip(imgs: torch.Tensor, model) -> torch.Tensor:
         ],
         dim=0,
     )
-    probs = torch.softmax(model(stacked), dim=1)
+    logits = model(stacked) / max(1e-3, temperature)
+    probs = torch.softmax(logits, dim=1)
     return probs.view(5, B, -1).mean(dim=0)

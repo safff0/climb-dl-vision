@@ -3,6 +3,24 @@ torch:
   seed: 42
   num_workers: 2
 
+route:
+  core_thr: 0.55
+  possible_thr: 0.35
+  rejected_strong_other_thr: 0.70
+  track_k: 3.0
+  weight_color: 0.50
+  weight_graph: 0.25
+  weight_track: 0.15
+  weight_det: 0.10
+  graph_radius_factor: 2.5
+  graph_radius_min_px: 40.0
+  graph_radius_max_px: 800.0
+  min_frames_seen: 1
+  colour_family_voting: true
+  propagation_iters: 3
+  propagation_alpha: 0.5
+  propagation_radius_factor: 2.0
+
 datasets:
   detection:
     dir: "datasets/detection"
@@ -164,20 +182,32 @@ models:
     pipeline: eva02_type
     dataset: "datasets/hold_type"
     backbone: "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k"
+    num_classes: 6
+    class_names:
+      - crimp
+      - jug
+      - pinch
+      - pocket
+      - sloper
+      - volume
     image_size: 448
+    type_pad: 0.20
+    type_tta: false
+    type_masked: false
+    type_chunk_size: 32
     amp_dtype: bf16
     grad_accum: 2
     weight_decay: 0.05
-    warmup_epochs: 5
+    warmup_epochs: 2
     label_smoothing: 0.05
     ema_decay: 0.9998
     train:
-      batch_size: 16
+      batch_size: 32
       lr: 0.0002
       epochs: 40
       scheduler: cosine
     validate:
-      batch_size: 16
+      batch_size: 32
 
   eva02_color:
     pipeline: eva02_color
@@ -196,6 +226,7 @@ models:
       - White
       - Yellow
     image_size: 448
+    color_temperature: 1.0
     amp_dtype: bf16
     grad_accum: 2
     weight_decay: 0.05

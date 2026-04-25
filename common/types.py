@@ -1,5 +1,6 @@
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import StrEnum
+from typing import Any
 
 
 class Split(StrEnum):
@@ -63,6 +64,129 @@ class ValidateConfig:
 class SegClass(StrEnum):
     HOLD = "hold"
     VOLUME = "volume"
+
+
+class RouteState(StrEnum):
+    CORE = "core"
+    POSSIBLE = "possible"
+    REJECTED = "rejected"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class BBox:
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+    def to_list(self) -> list[float]:
+        return [self.x1, self.y1, self.x2, self.y2]
+
+    @property
+    def cx(self) -> float:
+        return 0.5 * (self.x1 + self.x2)
+
+    @property
+    def cy(self) -> float:
+        return 0.5 * (self.y1 + self.y2)
+
+    @property
+    def width(self) -> float:
+        return max(0.0, self.x2 - self.x1)
+
+    @property
+    def height(self) -> float:
+        return max(0.0, self.y2 - self.y1)
+
+    @property
+    def area(self) -> float:
+        return self.width * self.height
+
+    @classmethod
+    def from_list(cls, xs: list[float] | tuple[float, ...]) -> "BBox":
+        return cls(float(xs[0]), float(xs[1]), float(xs[2]), float(xs[3]))
+
+
+@dataclass
+class PhysicalHold:
+    physical_track_id: str
+    bbox: BBox
+    center: tuple[float, float]
+    area: float
+    seg_class: str
+
+    color_label_raw: str
+    color_conf_raw: float
+    color_probs_raw: dict[str, float]
+
+    color_label_temporal: str
+    color_conf_temporal: float
+    color_probs_temporal: dict[str, float]
+    color_entropy: float
+
+    type_label: str
+    type_conf: float
+    type_probs_raw: dict[str, float] = field(default_factory=dict)
+    type_probs_temporal: dict[str, float] = field(default_factory=dict)
+
+    frames_seen: list[int] = field(default_factory=list)
+    det_conf_mean: float = 0.0
+    det_conf_max: float = 0.0
+
+    route_state: str = RouteState.UNKNOWN.value
+    route_score: float = 0.0
+    color_score: float = 0.0
+    graph_score: float = 0.0
+    track_score: float = 0.0
+    det_score: float = 0.0
+
+    usage_score: float = 0.0
+    usage_by_limb: str | None = None
+    usage_per_limb: dict[str, float] = field(default_factory=dict)
+
+    mask_rle: dict[str, Any] | None = None
+    schema_version: int = 2
+
+    def to_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        d["bbox"] = self.bbox.to_list()
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "PhysicalHold":
+        d = dict(d)
+        d["bbox"] = BBox.from_list(d["bbox"])
+        return cls(**d)
+
+
+@dataclass
+class Route:
+    target_color: str
+    holds: list[PhysicalHold]
+
+    def core_holds(self) -> list[PhysicalHold]:
+        return [h for h in self.holds if h.route_state == RouteState.CORE.value]
+
+    def possible_holds(self) -> list[PhysicalHold]:
+        return [h for h in self.holds if h.route_state == RouteState.POSSIBLE.value]
+
+    def active_holds(self) -> list[PhysicalHold]:
+        active = {RouteState.CORE.value, RouteState.POSSIBLE.value}
+        return [h for h in self.holds if h.route_state in active]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "target_color": self.target_color,
+            "holds": [h.to_dict() for h in self.holds],
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "Route":
+        return cls(
+            target_color=d["target_color"],
+            holds=[PhysicalHold.from_dict(x) for x in d["holds"]],
+        )
 
 
 @dataclass
